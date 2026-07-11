@@ -1,0 +1,35 @@
+{
+  "name": "rcode",
+  "version": "0.1.0",
+  "description": "AI coding agent CLI",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "rcode": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@rcode/core": "workspace:*",
+    "@rcode/ui": "workspace:*",
+    "@rcode/config": "workspace:*",
+    "@rcode/types": "workspace:*",
+    "@rcode/providers": "workspace:*",
+    "@rcode/tools": "workspace:*",
+    "@rcode/memory": "workspace:*",
+    "@rcode/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0",
+    "@types/node": "^22.0.0"
+  }
+}

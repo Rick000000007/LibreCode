@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../ui" },
+    { "path": "../config" },
+    { "path": "../types" },
+    { "path": "../providers" },
+    { "path": "../tools" },
+    { "path": "../memory" },
+    { "path": "../utils" }
+  ]
+}

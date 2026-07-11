@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "exactOptionalPropertyTypes": false,
+    "composite": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false
+  },
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/types" },
+    { "path": "packages/config" },
+    { "path": "packages/utils" },
+    { "path": "packages/memory" },
+    { "path": "packages/providers" },
+    { "path": "packages/tools" },
+    { "path": "packages/ui" },
+    { "path": "packages/cli" }
+  ]
+}
