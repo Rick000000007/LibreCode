@@ -1,5 +1,5 @@
 import type { LLMProvider } from './base.js';
-import type { LibreConfig, ProviderEntry, HealthCheckResult } from 'librecode-types';
+import type { LibreConfig, HealthCheckResult } from 'librecode-types';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';

@@ -1,6 +1,6 @@
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import type { LibreConfig, HealthCheckResult } from 'librecode-types';
+import type { LibreConfig } from 'librecode-types';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';

@@ -6,7 +6,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist"],
+  "files": ["dist", "assets"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Rick000000007/LibreCode.git"

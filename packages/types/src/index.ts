@@ -214,3 +214,18 @@ export interface ModelInfo {
   supportsStreaming: boolean;
   isFree: boolean;
 }
+
+export interface DoctorCheck {
+  name: string;
+  status: 'passed' | 'warning' | 'failed';
+  message: string;
+  fix?: string;
+}
+
+export interface DoctorReport {
+  timestamp: string;
+  version: string;
+  platform: string;
+  checks: DoctorCheck[];
+  summary: { passed: number; warnings: number; failed: number };
+}

@@ -34,6 +34,7 @@ export {
   handleProviderSwitch,
   handleProviderModels,
 } from './cli-commands.js';
+export { Doctor, formatDoctorReport } from './doctor.js';
 
 export function createProvider(
   name: string,

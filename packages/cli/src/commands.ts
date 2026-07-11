@@ -5,13 +5,115 @@ export type BuiltinCommand =
   | { type: 'exit' }
   | { type: 'clear' }
   | { type: 'cost' }
-  | { type: 'history'; cmd: string }
+  | { type: 'history' }
   | { type: 'permissions'; sub: string; args: string[] }
   | { type: 'model'; model: string }
   | { type: 'provider'; provider: string; args?: string[] }
   | { type: 'compact' }
   | { type: 'tokens' }
+  | { type: 'status' }
+  | { type: 'setup' }
+  | { type: 'doctor' }
+  | { type: 'workspace' }
+  | { type: 'session' }
+  | { type: 'git'; args: string }
+  | { type: 'config'; args: string[] }
+  | { type: 'tools' }
+  | { type: 'logs' }
   | { type: 'unknown'; command: string };
+
+const COMMAND_HELP: Record<string, { description: string; usage: string; examples: string[] }> = {
+  help: {
+    description: 'Show this help message',
+    usage: '/help [command]',
+    examples: ['/help', '/help doctor'],
+  },
+  exit: {
+    description: 'Exit librecode',
+    usage: '/exit',
+    examples: ['/exit', '/quit'],
+  },
+  clear: {
+    description: 'Clear conversation history (keeps system prompt)',
+    usage: '/clear',
+    examples: ['/clear'],
+  },
+  cost: {
+    description: 'Show token usage for this session',
+    usage: '/cost',
+    examples: ['/cost'],
+  },
+  tokens: {
+    description: 'Show context window usage',
+    usage: '/tokens',
+    examples: ['/tokens'],
+  },
+  status: {
+    description: 'Show current session status',
+    usage: '/status',
+    examples: ['/status'],
+  },
+  setup: {
+    description: 'Run the setup wizard',
+    usage: '/setup',
+    examples: ['/setup'],
+  },
+  doctor: {
+    description: 'Run diagnostics and health checks',
+    usage: '/doctor',
+    examples: ['/doctor'],
+  },
+  provider: {
+    description: 'Manage AI providers',
+    usage: '/provider [list|current|switch|login|logout|test|models]',
+    examples: ['/provider list', '/provider switch openai', '/provider test gemini'],
+  },
+  model: {
+    description: 'Switch model (managed by provider system)',
+    usage: '/model <name>',
+    examples: ['/model gpt-4o'],
+  },
+  permissions: {
+    description: 'Manage tool permissions',
+    usage: '/permissions [list|allow|deny|reset] [tool]',
+    examples: ['/permissions list', '/permissions allow write_file', '/permissions deny run_command'],
+  },
+  compact: {
+    description: 'Manually compact context window',
+    usage: '/compact',
+    examples: ['/compact'],
+  },
+  workspace: {
+    description: 'Show workspace information',
+    usage: '/workspace',
+    examples: ['/workspace'],
+  },
+  session: {
+    description: 'Show session information',
+    usage: '/session',
+    examples: ['/session'],
+  },
+  git: {
+    description: 'Git operations',
+    usage: '/git <command>',
+    examples: ['/git status', '/git diff', '/git log --oneline -5'],
+  },
+  config: {
+    description: 'View or edit configuration',
+    usage: '/config [path|show]',
+    examples: ['/config show', '/config path'],
+  },
+  tools: {
+    description: 'List available tools',
+    usage: '/tools',
+    examples: ['/tools'],
+  },
+  logs: {
+    description: 'Show log file location',
+    usage: '/logs',
+    examples: ['/logs'],
+  },
+};
 
 export function parseBuiltin(input: string): BuiltinCommand | null {
   const trimmed = input.trim();
@@ -26,13 +128,32 @@ export function parseBuiltin(input: string): BuiltinCommand | null {
       return { type: 'help' };
     case 'exit':
     case 'quit':
+    case 'q':
       return { type: 'exit' };
     case 'clear':
       return { type: 'clear' };
     case 'cost':
       return { type: 'cost' };
     case 'history':
-      return { type: 'history', cmd: parts.slice(1).join(' ') };
+      return { type: 'history' };
+    case 'status':
+      return { type: 'status' };
+    case 'setup':
+      return { type: 'setup' };
+    case 'doctor':
+      return { type: 'doctor' };
+    case 'workspace':
+      return { type: 'workspace' };
+    case 'session':
+      return { type: 'session' };
+    case 'logs':
+      return { type: 'logs' };
+    case 'tools':
+      return { type: 'tools' };
+    case 'git':
+      return { type: 'git', args: parts.slice(1).join(' ') };
+    case 'config':
+      return { type: 'config', args: parts.slice(1) };
     case 'permissions':
     case 'perms':
       return {
@@ -52,7 +173,6 @@ export function parseBuiltin(input: string): BuiltinCommand | null {
       return { type: 'compact' };
     case 'tokens':
     case 'token':
-      return { type: 'tokens' };
     case 't':
       return { type: 'tokens' };
     default:
@@ -60,23 +180,35 @@ export function parseBuiltin(input: string): BuiltinCommand | null {
   }
 }
 
-export function printBuiltinHelp(config: AgentConfig): string {
-  return [
-    '\x1B[1mAvailable commands:\x1B[22m',
-    '  \x1B[33m/help\x1B[39m         Show this help message',
-    '  \x1B[33m/exit\x1B[39m         Exit librecode',
-    '  \x1B[33m/clear\x1B[39m        Clear conversation history (keeps system prompt)',
-    '  \x1B[33m/cost\x1B[39m         Show token usage',
-    '  \x1B[33m/tokens\x1B[39m       Show context usage',
-    '  \x1B[33m/provider list\x1B[39m    List configured providers',
-    '  \x1B[33m/provider current\x1B[39m  Show active provider',
-    '  \x1B[33m/provider switch <id>\x1B[39m  Switch active provider',
-    '  \x1B[33m/permissions <cmd>\x1B[39m  Manage tool permissions',
-    '  \x1B[33m/compact\x1B[39m      Manually compact context',
-    '',
-    `  \x1B[90mContext:\x1B[39m  ${(config.maxContextTokens / 1000).toFixed(0)}K (compact at ${Math.round(config.compactThreshold * 100)}%)`,
-    '',
-  ].join('\n');
+export function printBuiltinHelp(config: AgentConfig, command?: string): string {
+  if (command) {
+    const cmd = COMMAND_HELP[command];
+    if (!cmd) return `No help available for \`${command}\`.\n`;
+    return [
+      `\x1B[1m/${command}\x1B[22m`,
+      `  ${cmd.description}`,
+      `  \x1B[90mUsage:\x1B[39m ${cmd.usage}`,
+      ...(cmd.examples.length > 0
+        ? [`\x1B[90mExamples:\x1B[39m`, ...cmd.examples.map((e) => `    \x1B[33m${e}\x1B[39m`)]
+        : []),
+      '',
+    ].join('\n');
+  }
+
+  const lines: string[] = [];
+  lines.push('\x1B[1mCommands:\x1B[22m');
+  lines.push('');
+
+  for (const [name, info] of Object.entries(COMMAND_HELP)) {
+    lines.push(`  \x1B[33m/${name.padEnd(15)}\x1B[39m ${info.description}`);
+  }
+
+  lines.push('');
+  lines.push(`  \x1B[90mType /help <command> for details on a specific command.\x1B[39m`);
+  lines.push(`  \x1B[90mContext: ${(config.maxContextTokens / 1000).toFixed(0)}K max, compact at ${Math.round(config.compactThreshold * 100)}%\x1B[39m`);
+  lines.push('');
+
+  return lines.join('\n');
 }
 
 export function getPromptIndicator(
