@@ -1,4 +1,4 @@
-import { BaseTool } from './index.js';
+import { BaseTool } from './base.js';
 import { resolvePath } from 'librecode-utils';
 import { execSync } from 'node:child_process';
 

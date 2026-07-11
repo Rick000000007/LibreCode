@@ -1,4 +1,4 @@
-import { BaseTool } from './index.js';
+import { BaseTool } from './base.js';
 import { SafetyChecker } from './safety.js';
 import { resolvePath, truncateText } from 'librecode-utils';
 import * as fs from 'node:fs/promises';

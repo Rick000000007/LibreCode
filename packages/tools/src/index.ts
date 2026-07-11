@@ -9,31 +9,9 @@ import { RunCommandTool } from './run_command.js';
 import { GitTool } from './git.js';
 import { WebFetchTool } from './web_fetch.js';
 
-export interface Tool {
-  name(): string;
-  description(): string;
-  parametersSchema(): Record<string, unknown>;
-  execute(args: Record<string, unknown>, workingDir: string): Promise<string>;
-  definition(): ToolDefinition;
-}
-
-export abstract class BaseTool implements Tool {
-  abstract name(): string;
-  abstract description(): string;
-  abstract parametersSchema(): Record<string, unknown>;
-  abstract execute(args: Record<string, unknown>, workingDir: string): Promise<string>;
-
-  definition(): ToolDefinition {
-    return {
-      type: 'function',
-      function: {
-        name: this.name(),
-        description: this.description(),
-        parameters: this.parametersSchema(),
-      },
-    };
-  }
-}
+import type { Tool } from './base.js';
+export type { Tool } from './base.js';
+export { BaseTool } from './base.js';
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();

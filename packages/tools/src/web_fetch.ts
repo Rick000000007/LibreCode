@@ -1,4 +1,4 @@
-import { BaseTool } from './index.js';
+import { BaseTool } from './base.js';
 
 export class WebFetchTool extends BaseTool {
   name(): string {

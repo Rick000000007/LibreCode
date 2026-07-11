@@ -1,4 +1,4 @@
-import { BaseTool } from './index.js';
+import { BaseTool } from './base.js';
 import { resolvePath, isBinary } from 'librecode-utils';
 import * as fs from 'node:fs/promises';
 
