@@ -64,6 +64,7 @@ export class TerminalRenderer {
   }
 
   private handleFatalError(message: string): void {
+    this.stopThinking();
     process.stdout.write(`\n\x1B[31;1mFATAL: ${message}\x1B[39m\n`);
   }
 

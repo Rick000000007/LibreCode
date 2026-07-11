@@ -89,6 +89,14 @@ async function main(): Promise<void> {
 
   renderer.printBanner(VERSION);
 
+  const defaultProvider = config.providers[config.provider];
+  if (defaultProvider && !defaultProvider.apiKey && config.provider !== 'ollama') {
+    process.stderr.write(
+      `\x1B[33m⚠ No API key configured for ${config.provider}.\x1B[39m\n` +
+      `\x1B[90m  Set \x1B[1m${config.provider.toUpperCase()}_API_KEY\x1B[22m env var or create ~/.config/librecode/config.toml\x1B[39m\n\n`,
+    );
+  }
+
   repoMapper.indexDirectory(workingDir);
   const repoMap = repoMapper.generateMap(4096);
   const prompt = generateSystemPrompt(workingDir, repoMap);
