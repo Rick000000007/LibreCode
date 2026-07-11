@@ -31,7 +31,7 @@ jobs:
       - run: pnpm lint
 
       - name: Verify npm pack (all packages)
-        run: pnpm -r pack
+        run: for pkg in packages/*/; do (cd "$pkg" && pnpm pack --dry-run > /dev/null); done
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
