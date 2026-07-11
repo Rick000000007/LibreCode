@@ -1,5 +1,5 @@
 /* eslint-disable no-constant-condition */
-import { BaseProvider, LlmError, createUsage } from './index.js';
+import { BaseProvider, LlmError, createUsage } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,

@@ -1,5 +1,5 @@
-import { BaseProvider, LlmError } from './index.js';
-import type { LLMProvider } from './index.js';
+import { BaseProvider, LlmError } from './base.js';
+import type { LLMProvider } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
