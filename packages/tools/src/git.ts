@@ -43,7 +43,8 @@ export class GitTool extends BaseTool {
     const action = args['action'] as string | undefined;
     if (!action) throw new Error("Missing 'action' parameter");
 
-    const extraArgs = (args['args'] as string) || '';
+    let extraArgs = (args['args'] as string) || '';
+    extraArgs = extraArgs.replace(/[;&|`$(){}]/g, '');
 
     const safety = new SafetyChecker();
     const check = safety.checkGitOperation(action, extraArgs);
@@ -105,6 +106,7 @@ export class GitTool extends BaseTool {
       const output = execSync(cmd, {
         cwd: workingDir,
         encoding: 'utf-8',
+        timeout: 60000,
         maxBuffer: 10 * 1024 * 1024,
       });
 

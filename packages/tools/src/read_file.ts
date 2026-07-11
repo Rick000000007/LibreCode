@@ -1,7 +1,6 @@
 import { BaseTool } from './index.js';
 import { resolvePath, isBinary } from '@rcode/utils';
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 
 const MAX_FILE_SIZE = 1_000_000;
 

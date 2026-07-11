@@ -50,7 +50,7 @@ export class SearchCodeTool extends BaseTool {
       let cmd = 'grep -rn';
 
       if (include) {
-        cmd += ` --include='${include}'`;
+        cmd += ` --include='${include.replace(/'/g, "'\\''")}'`;
       } else {
         const exts = [
           'rs', 'ts', 'js', 'jsx', 'tsx', 'py', 'go', 'java', 'c',
@@ -59,9 +59,9 @@ export class SearchCodeTool extends BaseTool {
         cmd += exts.map((ext) => ` --include='*.${ext}'`).join('');
       }
 
-      cmd += ` --regexp='${pattern.replace(/'/g, "'\\''")}' '${fullPath}' 2>/dev/null || true`;
+      cmd += ` --regexp='${pattern.replace(/'/g, "'\\''")}' '${fullPath.replace(/'/g, "'\\''")}' 2>/dev/null || true`;
 
-      const output = execSync(cmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+      const output = execSync(cmd, { encoding: 'utf-8', timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
 
       if (!output.trim()) return 'No matches found';
 

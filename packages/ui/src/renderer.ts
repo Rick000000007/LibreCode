@@ -42,6 +42,7 @@ export class TerminalRenderer {
   }
 
   private handleTextDelta(delta: string): void {
+    this.stopThinking();
     this.currentLine += delta;
     process.stdout.write(delta);
   }

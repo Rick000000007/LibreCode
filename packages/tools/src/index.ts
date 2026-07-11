@@ -8,8 +8,6 @@ import { SearchCodeTool } from './search_code.js';
 import { RunCommandTool } from './run_command.js';
 import { GitTool } from './git.js';
 import { WebFetchTool } from './web_fetch.js';
-import { SafetyChecker } from './safety.js';
-import { PermissionChecker } from './permissions.js';
 
 export interface Tool {
   name(): string;

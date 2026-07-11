@@ -47,7 +47,20 @@ export class ContextManager {
     }
 
     result.push(...recentMessages);
-    return result;
+
+    const compacted = result;
+    let rounds = 0;
+    while (this.needsCompaction(compacted) && rounds < 5) {
+      const longest = compacted.reduce((a, b) =>
+        (a.content?.length ?? 0) > (b.content?.length ?? 0) ? a : b,
+      );
+      longest.content = longest.content
+        ? longest.content.slice(0, Math.floor(longest.content.length / 2))
+        : '';
+      rounds++;
+    }
+
+    return compacted;
   }
 
   private summarizeMessages(messages: Message[]): string | null {
@@ -57,7 +70,7 @@ export class ContextManager {
 
     const userMessages = messages
       .filter((m) => m.role === 'user')
-      .map((m) => m.content);
+      .map((m) => m.content ?? '');
 
     if (userMessages.length > 0) {
       parts.push(`Primary request: ${safeTruncate(userMessages[0] ?? '', 300)}`);
@@ -71,7 +84,7 @@ export class ContextManager {
       parts.push(`Subsequent requests:\n${later}`);
     }
 
-    const toolMessages = messages.filter((m) => m.role === 'tool').map((m) => m.content);
+    const toolMessages = messages.filter((m) => m.role === 'tool').map((m) => m.content ?? '');
     if (toolMessages.length > 0) {
       const toolSummary = toolMessages
         .slice(0, 15)
@@ -105,7 +118,7 @@ export class ContextManager {
 
     const decisions: string[] = [];
     for (const msg of messages) {
-      if (msg.role === 'assistant') {
+      if (msg.role === 'assistant' && msg.content) {
         const content = msg.content;
         if (
           content.includes('TODO') ||

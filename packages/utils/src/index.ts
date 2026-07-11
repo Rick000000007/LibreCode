@@ -103,7 +103,7 @@ export function countTokens(text: string): number {
 }
 
 export function countMessageTokens(msg: Message): number {
-  const contentTokens = countTokens(msg.content);
+  const contentTokens = countTokens(msg.content ?? '');
   const toolTokens =
     msg.tool_calls?.reduce((sum, tc) => {
       return sum + countTokens(tc.function.name) + countTokens(tc.function.arguments);

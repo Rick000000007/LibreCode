@@ -7,7 +7,7 @@ import { type AgentConfig } from '@rcode/types';
 import { loadConfig, type CliOptions } from '@rcode/config';
 import { Agent, generateSystemPrompt, RepoMapper } from '@rcode/core';
 import { TerminalRenderer } from '@rcode/ui';
-import { ToolRegistry, SafetyChecker, PermissionChecker } from '@rcode/tools';
+import { ToolRegistry, PermissionChecker } from '@rcode/tools';
 import { ModelRouter, createProvider } from '@rcode/providers';
 import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
 import { createRepl } from './repl.js';
@@ -18,11 +18,11 @@ function parseArgs(argv: string[]): Partial<CliOptions> {
   const options: Partial<CliOptions> = {};
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i]!;
+    if (arg === '-v' || arg === '--version') {
+      process.stdout.write(`rcode v${VERSION}\n`);
+      process.exit(0);
+    }
     switch (arg) {
-      case '-v':
-      case '--version':
-        options.verbose = true;
-        break;
       case '-m':
       case '--model':
         options.model = argv[++i] ?? '';
@@ -81,7 +81,6 @@ async function main(): Promise<void> {
     : process.cwd();
 
   const tools = ToolRegistry.defaultRegistry();
-  const safetyChecker = new SafetyChecker();
   const permissionChecker = new PermissionChecker(cliOptions.yes ?? false);
   const provider = buildProvider(config);
   const agent = new Agent(provider, tools, config, workingDir, permissionChecker);
@@ -102,38 +101,44 @@ async function main(): Promise<void> {
 
   const getPrompt = () => getPromptIndicator(config);
   const rl = createRepl(getPrompt());
+  let processing = false;
   rl.on('line', async (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      rl.prompt();
-      return;
-    }
-
-    const builtin = parseBuiltin(trimmed);
-    if (builtin) {
-      await handleBuiltin(builtin, agent, renderer, config, rl, getPrompt);
-      return;
-    }
-
-    rl.pause();
+    if (processing) return;
+    processing = true;
     try {
-      if (agent.supportsStreaming()) {
-        renderer.startThinking();
-        await agent.runTurnStreaming(trimmed, (event) => {
-          renderer.stopThinking();
-          renderer.handleEvent(event);
-        });
-      } else {
-        const result = await agent.runTurn(trimmed);
-        process.stdout.write(result + '\n');
+      const trimmed = line.trim();
+      if (!trimmed) {
+        rl.prompt();
+        return;
       }
-      renderer.printUsage(agent.tokenUsage());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      renderer.handleEvent({ type: 'fatal_error', message: msg });
+
+      const builtin = parseBuiltin(trimmed);
+      if (builtin) {
+        await handleBuiltin(builtin, agent, renderer, config, rl, getPrompt);
+        return;
+      }
+
+      rl.pause();
+      try {
+        if (agent.supportsStreaming()) {
+          renderer.startThinking();
+          await agent.runTurnStreaming(trimmed, (event) => {
+            renderer.handleEvent(event);
+          });
+        } else {
+          const result = await agent.runTurn(trimmed);
+          process.stdout.write(result + '\n');
+        }
+        renderer.printUsage(agent.tokenUsage());
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        renderer.handleEvent({ type: 'fatal_error', message: msg });
+      }
+      rl.prompt();
+      rl.resume();
+    } finally {
+      processing = false;
     }
-    rl.prompt();
-    rl.resume();
   });
 
   rl.on('close', () => {
@@ -153,7 +158,7 @@ function buildProvider(config: AgentConfig): ModelRouter {
       providerConfig.baseUrl,
       providerConfig.defaultModel,
     );
-    const modelId = providerConfig.defaultModel;
+    const modelId = `${name}:${providerConfig.defaultModel}`;
     providerMap.set(modelId, provider);
     failoverChain.push(modelId);
   }
@@ -198,8 +203,7 @@ async function handleBuiltin(
       rl.setPrompt(getPrompt());
       break;
     case 'provider':
-      config.provider = cmd.provider;
-      process.stdout.write(`\x1B[90mProvider changed to: ${config.provider}\x1B[39m\n`);
+      process.stdout.write('\x1B[90m/provider is not yet supported in-session. Restart rcode with --provider to change.\x1B[39m\n');
       break;
     case 'compact':
       agent.clearHistory();
@@ -251,11 +255,10 @@ async function runSingleTurn(
 ): Promise<void> {
   try {
     if (agent.supportsStreaming()) {
-      renderer.startThinking();
-      await agent.runTurnStreaming(prompt, (event) => {
-        renderer.stopThinking();
-        renderer.handleEvent(event);
-      });
+        renderer.startThinking();
+        await agent.runTurnStreaming(prompt, (event) => {
+          renderer.handleEvent(event);
+        });
     } else {
       const result = await agent.runTurn(prompt);
       process.stdout.write(result + '\n');

@@ -28,7 +28,7 @@ export interface FunctionDefinition {
 
 export interface Message {
   role: Role;
-  content: string;
+  content: string | null;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
 }

@@ -1,5 +1,5 @@
 import { BaseTool } from './index.js';
-import { SafetyChecker, SafetyLevel } from './safety.js';
+import { SafetyChecker } from './safety.js';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -35,7 +35,8 @@ export class RunCommandTool extends BaseTool {
     const command = args['command'] as string | undefined;
     if (!command) throw new Error("Missing 'command' parameter");
 
-    const timeout = Math.min((args['timeout_seconds'] as number) ?? 60, 300);
+    const timeoutSec = Number(args['timeout_seconds'] ?? 60);
+    const timeout = Number.isFinite(timeoutSec) ? Math.min(timeoutSec, 300) : 60;
 
     const safety = new SafetyChecker();
     const check = safety.checkCommand(command);

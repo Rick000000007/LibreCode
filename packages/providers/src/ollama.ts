@@ -29,7 +29,7 @@ interface OllamaResponse {
 function convertMessages(messages: Message[]): OllamaMessage[] {
   return messages.map((m) => ({
     role: m.role === 'tool' ? 'user' : m.role,
-    content: m.content,
+    content: m.content ?? '',
     tool_calls: m.tool_calls as unknown[] | undefined,
   }));
 }

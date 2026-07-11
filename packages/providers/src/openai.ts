@@ -135,7 +135,7 @@ export class OpenAIProvider extends BaseProvider {
     const body = {
       model: request.model,
       messages: convertMessages(request.messages),
-      tools: request.tools.length > 0 ? request.tools : undefined,
+      tools: (request.tools ?? []).length > 0 ? request.tools : undefined,
       temperature: request.temperature,
       max_tokens: request.maxTokens,
       stream: false,
@@ -190,7 +190,7 @@ export class OpenAIProvider extends BaseProvider {
     const body = {
       model: request.model,
       messages: convertMessages(request.messages),
-      tools: request.tools.length > 0 ? request.tools : undefined,
+      tools: (request.tools ?? []).length > 0 ? request.tools : undefined,
       temperature: request.temperature,
       max_tokens: request.maxTokens,
       stream: true,
@@ -223,11 +223,17 @@ export class OpenAIProvider extends BaseProvider {
     let buffer = '';
 
     try {
+      let streamDone = false;
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          if (streamDone) break;
+          streamDone = true;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+        }
 
         while (true) {
           const newlinePos = buffer.indexOf('\n');
@@ -277,6 +283,8 @@ export class OpenAIProvider extends BaseProvider {
             // Skip malformed JSON chunks
           }
         }
+
+        if (streamDone) break;
       }
     } finally {
       reader.releaseLock();

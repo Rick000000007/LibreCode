@@ -61,19 +61,20 @@ export class SafetyChecker {
     if (lower.includes('|')) {
       const parts = lower.split('|');
       if (parts.length > 1) {
-        const firstPart = (parts[0] ?? '').trim();
-        if (firstPart.includes('curl') || firstPart.includes('wget')) {
-          for (let i = 1; i < parts.length; i++) {
-            const sub = (parts[i] ?? '').trim();
-            if (
-              sub === 'sh' ||
-              sub.startsWith('sh ') ||
-              sub === 'bash' ||
-              sub.startsWith('bash ') ||
-              sub === 'zsh' ||
-              sub.startsWith('zsh ')
-            ) {
-              return { kind: 'warning', reason: 'Pipe remote script to shell' };
+        const downloadTool = (p: string): boolean => {
+          const t = p.trim();
+          return t.includes('curl') || t.includes('wget');
+        };
+        const shellTool = (p: string): boolean => {
+          const t = p.trim();
+          return t === 'sh' || t.startsWith('sh ') || t === 'bash' || t.startsWith('bash ') || t === 'zsh' || t.startsWith('zsh ');
+        };
+        for (let i = 0; i < parts.length; i++) {
+          if (downloadTool(parts[i] ?? '')) {
+            for (let j = 0; j < parts.length; j++) {
+              if (i !== j && shellTool(parts[j] ?? '')) {
+                return { kind: 'warning', reason: 'Pipe remote script to shell' };
+              }
             }
           }
         }
@@ -141,7 +142,7 @@ export class SafetyChecker {
     const normalizedFile = path.resolve(resolved);
     const normalizedWork = path.resolve(workingDir);
 
-    if (!normalizedFile.startsWith(normalizedWork)) {
+    if (!normalizedFile.startsWith(normalizedWork + path.sep) && normalizedFile !== normalizedWork) {
       return {
         kind: 'warning',
         reason: `Path escapes working directory: ${normalizedFile}`,

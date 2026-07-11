@@ -62,10 +62,10 @@ function convertMessages(
   for (const m of messages) {
     switch (m.role) {
       case 'system':
-        system = m.content;
+        system = m.content ?? undefined;
         break;
       case 'user':
-        converted.push({ role: 'user', content: m.content });
+        converted.push({ role: 'user', content: m.content ?? '' });
         break;
       case 'assistant': {
         const blocks: AnthropicContentBlock[] = [];
@@ -90,7 +90,12 @@ function convertMessages(
         }
         converted.push({
           role: 'assistant',
-          content: blocks.length === 1 ? m.content : blocks,
+          content:
+            blocks.length === 0
+              ? (m.content ?? '')
+              : blocks.length === 1 && blocks[0]!.type === 'text'
+                ? blocks[0]!.text ?? ''
+                : blocks,
         });
         break;
       }

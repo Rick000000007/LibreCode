@@ -1,5 +1,5 @@
 import { BaseTool } from './index.js';
-import { SafetyChecker, SafetyLevel } from './safety.js';
+import { SafetyChecker } from './safety.js';
 import { resolvePath } from '@rcode/utils';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';

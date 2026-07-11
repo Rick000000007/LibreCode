@@ -5,6 +5,7 @@ export class Spinner {
   private message = '';
 
   start(msg = ''): void {
+    if (this.interval) this.stop();
     this.message = msg;
     this.currentFrame = 0;
     process.stderr.write('\x1B[?25l');
@@ -25,7 +26,7 @@ export class Spinner {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
+      process.stderr.write('\r\x1B[2K\x1B[?25h');
     }
-    process.stderr.write('\r\x1B[2K\x1B[?25h');
   }
 }

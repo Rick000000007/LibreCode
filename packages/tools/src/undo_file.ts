@@ -1,7 +1,6 @@
 import { BaseTool } from './index.js';
 import { resolvePath } from '@rcode/utils';
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 
 export class UndoFileTool extends BaseTool {
   name(): string {

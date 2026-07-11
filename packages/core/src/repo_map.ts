@@ -39,6 +39,7 @@ export class RepoMapper {
 
   indexDirectory(dir: string): void {
     this.projectInfo = this.detectProject(dir);
+    this.entries.clear();
 
     const walkDir = (currentPath: string) => {
       let items: fs.Dirent[];
@@ -104,8 +105,9 @@ export class RepoMapper {
       const headerTokens = countTokens(header);
       if (tokenCount + headerTokens > maxTokens) break;
 
-      output += header;
-      tokenCount += headerTokens;
+      let fileContent = header;
+      let fileTokenCount = headerTokens;
+      let truncated = false;
 
       const imports = symbols.filter(
         (s) => s.kind === 'use' || s.kind === 'import',
@@ -113,9 +115,11 @@ export class RepoMapper {
       if (imports.length > 0) {
         const importLine = `  imports: ${imports.map((s) => s.name).join(', ')}\n`;
         const tokens = countTokens(importLine);
-        if (tokenCount + tokens <= maxTokens) {
-          output += importLine;
-          tokenCount += tokens;
+        if (tokenCount + fileTokenCount + tokens <= maxTokens) {
+          fileContent += importLine;
+          fileTokenCount += tokens;
+        } else {
+          truncated = true;
         }
       }
 
@@ -123,10 +127,22 @@ export class RepoMapper {
         if (sym.kind === 'use' || sym.kind === 'import') continue;
         const line = `  ${sym.kind} ${sym.name}${sym.signature ? ' ' + sym.signature : ''}\n`;
         const lineTokens = countTokens(line);
-        if (tokenCount + lineTokens > maxTokens) break;
-        output += line;
-        tokenCount += lineTokens;
+        if (tokenCount + fileTokenCount + lineTokens > maxTokens) {
+          truncated = true;
+          break;
+        }
+        fileContent += line;
+        fileTokenCount += lineTokens;
       }
+
+      if (truncated) {
+        const truncToken = countTokens(' (...)');
+        fileContent = fileContent.replace(':\n', ': (...)\n');
+        fileTokenCount += truncToken;
+      }
+
+      output += fileContent;
+      tokenCount += fileTokenCount;
     }
 
     return output;
@@ -136,7 +152,7 @@ export class RepoMapper {
     try {
       const output = execSync(
         'git log --pretty=format:%h --name-only -20',
-        { cwd: dir } as { cwd: string },
+        { cwd: dir },
       ).toString();
 
       const lines = output.split('\n');
@@ -309,12 +325,9 @@ export class RepoMapper {
 
   private extractRustSymbols(content: string): SymbolEntry[] {
     const symbols: SymbolEntry[] = [];
-    for (let i = 0; i < content.length; i++) {
-      const lineNum = content.slice(0, i).split('\n').length;
-      const rest = content.slice(i);
-      const lineEnd = rest.indexOf('\n');
-      const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-      const trimmed = line.trim();
+    const lines = content.split('\n');
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const trimmed = lines[lineNum]!.trim();
 
       const patterns: Array<[RegExp, string]> = [
         [/^(?:pub\s+)?use\s+([^;]+)/, 'use'],
@@ -332,12 +345,7 @@ export class RepoMapper {
       for (const [regex, kind] of patterns) {
         const match = trimmed.match(regex);
         if (match && match[1]) {
-          symbols.push({
-            kind,
-            name: match[1],
-            line: lineNum,
-            signature: '',
-          });
+          symbols.push({ kind, name: match[1], line: lineNum + 1, signature: '' });
           break;
         }
       }
@@ -347,47 +355,25 @@ export class RepoMapper {
 
   private extractPythonSymbols(content: string): SymbolEntry[] {
     const symbols: SymbolEntry[] = [];
-    for (let i = 0; i < content.length; i++) {
-      const lineNum = content.slice(0, i).split('\n').length;
-      const rest = content.slice(i);
-      const lineEnd = rest.indexOf('\n');
-      const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-      const trimmed = line.trim();
+    const lines = content.split('\n');
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const trimmed = lines[lineNum]!.trim();
 
-      const importMatch = trimmed.match(
-        /^(?:from\s+\S+\s+import|import\s+\S+)/,
-      );
+      const importMatch = trimmed.match(/^(?:from\s+\S+\s+import|import\s+\S+)/);
       if (importMatch) {
-        symbols.push({
-          kind: 'import',
-          name: trimmed,
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'import', name: trimmed, line: lineNum + 1, signature: '' });
         continue;
       }
 
-      const defMatch = trimmed.match(
-        /^(?:async\s+)?def\s+(\w+)/,
-      );
+      const defMatch = trimmed.match(/^(?:async\s+)?def\s+(\w+)/);
       if (defMatch && defMatch[1]) {
-        symbols.push({
-          kind: 'fn',
-          name: defMatch[1],
-          line: lineNum,
-          signature: trimmed,
-        });
+        symbols.push({ kind: 'fn', name: defMatch[1], line: lineNum + 1, signature: trimmed });
         continue;
       }
 
       const classMatch = trimmed.match(/^class\s+(\w+)/);
       if (classMatch && classMatch[1]) {
-        symbols.push({
-          kind: 'class',
-          name: classMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'class', name: classMatch[1], line: lineNum + 1, signature: '' });
       }
     }
     return symbols;
@@ -395,77 +381,43 @@ export class RepoMapper {
 
   private extractJsSymbols(content: string): SymbolEntry[] {
     const symbols: SymbolEntry[] = [];
-    for (let i = 0; i < content.length; i++) {
-      const lineNum = content.slice(0, i).split('\n').length;
-      const rest = content.slice(i);
-      const lineEnd = rest.indexOf('\n');
-      const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-      const trimmed = line.trim();
+    const lines = content.split('\n');
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const trimmed = lines[lineNum]!.trim();
 
       const importMatch = trimmed.match(/^import\s+/);
       if (importMatch) {
-        symbols.push({
-          kind: 'import',
-          name: trimmed.replace(/;$/, ''),
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'import', name: trimmed.replace(/;$/, ''), line: lineNum + 1, signature: '' });
         continue;
       }
 
-      const fnMatch = trimmed.match(
-        /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/,
-      );
+      const fnMatch = trimmed.match(/^(?:export\s+)?(?:async\s+)?function\s+(\w+)/);
       if (fnMatch && fnMatch[1]) {
-        symbols.push({ kind: 'fn', name: fnMatch[1], line: lineNum, signature: '' });
+        symbols.push({ kind: 'fn', name: fnMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
       const classMatch = trimmed.match(/^(?:export\s+)?class\s+(\w+)/);
       if (classMatch && classMatch[1]) {
-        symbols.push({
-          kind: 'class',
-          name: classMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'class', name: classMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
-      const interfaceMatch = trimmed.match(
-        /^(?:export\s+)?interface\s+(\w+)/,
-      );
+      const interfaceMatch = trimmed.match(/^(?:export\s+)?interface\s+(\w+)/);
       if (interfaceMatch && interfaceMatch[1]) {
-        symbols.push({
-          kind: 'interface',
-          name: interfaceMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'interface', name: interfaceMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
       const typeMatch = trimmed.match(/^(?:export\s+)?type\s+(\w+)/);
       if (typeMatch && typeMatch[1]) {
-        symbols.push({
-          kind: 'type',
-          name: typeMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'type', name: typeMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
-      const arrowFnMatch = trimmed.match(
-        /^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(/,
-      );
+      const arrowFnMatch = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(/);
       if (arrowFnMatch && arrowFnMatch[1]) {
-        symbols.push({
-          kind: 'const fn',
-          name: arrowFnMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'const fn', name: arrowFnMatch[1], line: lineNum + 1, signature: '' });
       }
     }
     return symbols;
@@ -473,43 +425,25 @@ export class RepoMapper {
 
   private extractGoSymbols(content: string): SymbolEntry[] {
     const symbols: SymbolEntry[] = [];
-    for (let i = 0; i < content.length; i++) {
-      const lineNum = content.slice(0, i).split('\n').length;
-      const rest = content.slice(i);
-      const lineEnd = rest.indexOf('\n');
-      const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-      const trimmed = line.trim();
+    const lines = content.split('\n');
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const trimmed = lines[lineNum]!.trim();
 
       const funcMatch = trimmed.match(/^func\s+(?:\([^)]*\)\s+)?(\w+)/);
       if (funcMatch && funcMatch[1]) {
-        symbols.push({
-          kind: 'fn',
-          name: funcMatch[1],
-          line: lineNum,
-          signature: trimmed,
-        });
+        symbols.push({ kind: 'fn', name: funcMatch[1], line: lineNum + 1, signature: trimmed });
         continue;
       }
 
       const typeMatch = trimmed.match(/^type\s+(\w+)/);
       if (typeMatch && typeMatch[1]) {
-        symbols.push({
-          kind: 'type',
-          name: typeMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'type', name: typeMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
       const varConstMatch = trimmed.match(/^(var|const)\s+(\w+)/);
       if (varConstMatch && varConstMatch[2]) {
-        symbols.push({
-          kind: varConstMatch[1]!,
-          name: varConstMatch[2],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: varConstMatch[1]!, name: varConstMatch[2], line: lineNum + 1, signature: '' });
       }
     }
     return symbols;
@@ -517,34 +451,19 @@ export class RepoMapper {
 
   private extractGenericSymbols(content: string): SymbolEntry[] {
     const symbols: SymbolEntry[] = [];
-    for (let i = 0; i < content.length; i++) {
-      const lineNum = content.slice(0, i).split('\n').length;
-      const rest = content.slice(i);
-      const lineEnd = rest.indexOf('\n');
-      const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-      const trimmed = line.trim();
+    const lines = content.split('\n');
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const trimmed = lines[lineNum]!.trim();
 
-      const fnMatch = trimmed.match(
-        /function\s+(\w+)\s*\(/,
-      );
+      const fnMatch = trimmed.match(/function\s+(\w+)\s*\(/);
       if (fnMatch && fnMatch[1]) {
-        symbols.push({
-          kind: 'fn',
-          name: fnMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'fn', name: fnMatch[1], line: lineNum + 1, signature: '' });
         continue;
       }
 
       const classMatch = trimmed.match(/class\s+(\w+)/);
       if (classMatch && classMatch[1]) {
-        symbols.push({
-          kind: 'class',
-          name: classMatch[1],
-          line: lineNum,
-          signature: '',
-        });
+        symbols.push({ kind: 'class', name: classMatch[1], line: lineNum + 1, signature: '' });
       }
     }
     return symbols;

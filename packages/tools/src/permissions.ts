@@ -73,16 +73,28 @@ export class PermissionChecker {
   }
 
   private promptUser(toolName: string, args: Record<string, unknown>): boolean {
+    if (process.env['RCODE_NO_PERMISSION_PROMPT']) {
+      return true;
+    }
+
     const description = this.describeAction(toolName, args);
 
     console.error('\n' + `  Tool: ${toolName}`);
     console.error(`  Action: ${description}`);
-    console.error('');
+    console.error('  Allow? (y/N): ');
 
-    // In non-interactive mode or when piped, we need to read from stdin
-    // This will be handled by the CLI layer
-    // For now, default to true for interactive
-    return true;
+    if (!process.stdin.isTTY) {
+      return true;
+    }
+
+    try {
+      const buf = Buffer.alloc(1024);
+      const bytesRead = fs.readSync(process.stdin.fd, buf, 0, 1024, null);
+      const answer = buf.toString('utf-8', 0, bytesRead).trim().toLowerCase();
+      return answer === 'y' || answer === 'yes';
+    } catch {
+      return true;
+    }
   }
 
   setAlwaysAllow(toolName: string): void {

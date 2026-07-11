@@ -43,7 +43,7 @@ function convertMessages(
     if (msg.role === 'user') {
       contents.push({
         role: 'user',
-        parts: [{ text: msg.content }],
+        parts: [{ text: msg.content ?? '' }],
       });
     } else if (msg.role === 'assistant') {
       const parts: GeminiContent['parts'] = [];
