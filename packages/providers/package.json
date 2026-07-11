@@ -1,6 +1,6 @@
 {
   "name": "librecode-providers",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "LLM provider abstraction and implementations for librecode",
   "license": "MIT",
   "publishConfig": {
