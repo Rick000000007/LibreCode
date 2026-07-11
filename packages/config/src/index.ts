@@ -3,7 +3,7 @@ import {
   createDefaultAgentConfig,
   type ProviderConfig,
   createDefaultProviderConfig,
-} from '@librecode/types';
+} from 'librecode-types';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';

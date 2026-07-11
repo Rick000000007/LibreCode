@@ -5,7 +5,7 @@ import type {
   CompletionResponse,
   StreamEvent,
   Message,
-} from '@librecode/types';
+} from 'librecode-types';
 
 interface ProviderOptions {
   apiKey?: string;

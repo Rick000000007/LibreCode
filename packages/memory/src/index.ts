@@ -1,5 +1,5 @@
-import type { Message } from '@librecode/types';
-import { countMessagesTokens, safeTruncate } from '@librecode/utils';
+import type { Message } from 'librecode-types';
+import { countMessagesTokens, safeTruncate } from 'librecode-utils';
 
 export class ContextManager {
   private maxTokens: number;

@@ -1,4 +1,4 @@
-import type { AgentConfig } from '@librecode/types';
+import type { AgentConfig } from 'librecode-types';
 
 export type BuiltinCommand =
   | { type: 'help' }

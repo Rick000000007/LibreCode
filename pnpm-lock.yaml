@@ -47,28 +47,28 @@ importers:
 
   packages/cli:
     dependencies:
-      '@librecode/config':
+      librecode-config:
         specifier: workspace:*
         version: link:../config
-      '@librecode/core':
+      librecode-core:
         specifier: workspace:*
         version: link:../core
-      '@librecode/memory':
+      librecode-memory:
         specifier: workspace:*
         version: link:../memory
-      '@librecode/providers':
+      librecode-providers:
         specifier: workspace:*
         version: link:../providers
-      '@librecode/tools':
+      librecode-tools:
         specifier: workspace:*
         version: link:../tools
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
-      '@librecode/ui':
+      librecode-ui:
         specifier: workspace:*
         version: link:../ui
-      '@librecode/utils':
+      librecode-utils:
         specifier: workspace:*
         version: link:../utils
     devDependencies:
@@ -84,7 +84,7 @@ importers:
 
   packages/config:
     dependencies:
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -97,22 +97,22 @@ importers:
 
   packages/core:
     dependencies:
-      '@librecode/config':
+      librecode-config:
         specifier: workspace:*
         version: link:../config
-      '@librecode/memory':
+      librecode-memory:
         specifier: workspace:*
         version: link:../memory
-      '@librecode/providers':
+      librecode-providers:
         specifier: workspace:*
         version: link:../providers
-      '@librecode/tools':
+      librecode-tools:
         specifier: workspace:*
         version: link:../tools
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
-      '@librecode/utils':
+      librecode-utils:
         specifier: workspace:*
         version: link:../utils
     devDependencies:
@@ -125,10 +125,10 @@ importers:
 
   packages/memory:
     dependencies:
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
-      '@librecode/utils':
+      librecode-utils:
         specifier: workspace:*
         version: link:../utils
     devDependencies:
@@ -141,10 +141,10 @@ importers:
 
   packages/providers:
     dependencies:
-      '@librecode/config':
+      librecode-config:
         specifier: workspace:*
         version: link:../config
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -157,10 +157,10 @@ importers:
 
   packages/tools:
     dependencies:
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
-      '@librecode/utils':
+      librecode-utils:
         specifier: workspace:*
         version: link:../utils
     devDependencies:
@@ -182,7 +182,7 @@ importers:
 
   packages/ui:
     dependencies:
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -195,7 +195,7 @@ importers:
 
   packages/utils:
     dependencies:
-      '@librecode/types':
+      librecode-types:
         specifier: workspace:*
         version: link:../types
     devDependencies:

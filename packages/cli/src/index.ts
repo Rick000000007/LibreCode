@@ -3,12 +3,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { type AgentConfig } from '@librecode/types';
-import { loadConfig, type CliOptions } from '@librecode/config';
-import { Agent, generateSystemPrompt, RepoMapper } from '@librecode/core';
-import { TerminalRenderer } from '@librecode/ui';
-import { ToolRegistry, PermissionChecker } from '@librecode/tools';
-import { ModelRouter, createProvider } from '@librecode/providers';
+import { type AgentConfig } from 'librecode-types';
+import { loadConfig, type CliOptions } from 'librecode-config';
+import { Agent, generateSystemPrompt, RepoMapper } from 'librecode-core';
+import { TerminalRenderer } from 'librecode-ui';
+import { ToolRegistry, PermissionChecker } from 'librecode-tools';
+import { ModelRouter, createProvider } from 'librecode-providers';
 import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
 import { createRepl } from './repl.js';
 

@@ -1,5 +1,5 @@
 {
-  "name": "@librecode/ui",
+  "name": "librecode-ui",
   "version": "0.1.0",
   "description": "Terminal UI for librecode",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@librecode/types": "workspace:*"
+    "librecode-types": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

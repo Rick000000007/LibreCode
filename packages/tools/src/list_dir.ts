@@ -1,5 +1,5 @@
 import { BaseTool } from './index.js';
-import { resolvePath, formatSize } from '@librecode/utils';
+import { resolvePath, formatSize } from 'librecode-utils';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 

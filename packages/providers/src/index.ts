@@ -3,7 +3,7 @@ import type {
   CompletionResponse,
   StreamEvent,
   TokenUsage,
-} from '@librecode/types';
+} from 'librecode-types';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 import { OllamaProvider } from './ollama.js';

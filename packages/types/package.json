@@ -1,5 +1,5 @@
 {
-  "name": "@librecode/types",
+  "name": "librecode-types",
   "version": "0.1.0",
   "description": "Core type definitions for librecode",
   "license": "MIT",

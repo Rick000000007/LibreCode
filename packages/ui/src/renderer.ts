@@ -1,4 +1,4 @@
-import type { AgentEvent, TokenUsage } from '@librecode/types';
+import type { AgentEvent, TokenUsage } from 'librecode-types';
 import { Spinner } from './spinner.js';
 
 export class TerminalRenderer {

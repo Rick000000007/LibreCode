@@ -1,4 +1,4 @@
-import { resolvePath } from '@librecode/utils';
+import { resolvePath } from 'librecode-utils';
 import * as path from 'node:path';
 
 const MAX_WRITE_BYTES = 1_000_000;

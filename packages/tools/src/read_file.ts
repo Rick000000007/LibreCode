@@ -1,5 +1,5 @@
 import { BaseTool } from './index.js';
-import { resolvePath, isBinary } from '@librecode/utils';
+import { resolvePath, isBinary } from 'librecode-utils';
 import * as fs from 'node:fs/promises';
 
 const MAX_FILE_SIZE = 1_000_000;
