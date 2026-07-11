@@ -26,7 +26,7 @@ import {
 import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
 import { createRepl } from './repl.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 function parseArgs(argv: string[]): Partial<CliOptions> {
   const options: Partial<CliOptions> = {};
