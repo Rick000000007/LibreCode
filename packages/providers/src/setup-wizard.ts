@@ -25,6 +25,7 @@ export class SetupWizard {
       const providers = this.registry.all();
 
       output.write('Choose an AI provider:\n\n');
+      output.write(`  \x1B[33m0.\x1B[39m \x1B[32mFree\x1B[39m (No API key needed) \x1B[32m✓ Recommended\x1B[39m\n`);
       for (let i = 0; i < providers.length; i++) {
         const p = providers[i]!;
         const keyInfo = p.requiresApiKey ? ' (API key required)' : ' (no API key needed)';
@@ -33,13 +34,19 @@ export class SetupWizard {
       }
       output.write(`  \x1B[33m${providers.length + 1}.\x1B[39m Configure Later\n\n`);
 
-      const choice = await rl.question('\x1B[90mEnter choice (1-' + (providers.length + 1) + '): \x1B[39m');
+      const choice = await rl.question('\x1B[90mEnter choice (0-' + (providers.length + 1) + '): \x1B[39m');
       const num = parseInt(choice.trim(), 10);
 
-      if (num < 1 || num > providers.length + 1 || isNaN(num)) {
+      if (isNaN(num) || num < 0 || num > providers.length + 1) {
         output.write('\x1B[33mNo provider configured. Run `librecode` again to set up.\x1B[39m\n');
         this.saveEmpty();
         return false;
+      }
+
+      if (num === 0) {
+        output.write(`\n\x1B[32m✓ Free provider configured successfully! Using best available free model.\x1B[39m\n`);
+        this.saveEmpty();
+        return true;
       }
 
       if (num === providers.length + 1) {

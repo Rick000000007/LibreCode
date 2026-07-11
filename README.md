@@ -6,17 +6,22 @@ AI coding agent. Works like Claude Code, OpenCode, or Cursor — but open source
 
 ## Features
 
-- **Multi-provider** — OpenAI, Anthropic, Ollama, OpenRouter, Gemini (pick or failover)
+- **Zero-configuration** — works out of the box with free models (Gemini, Groq, Ollama, OpenRouter, Together, NVIDIA)
+- **Intelligent auto-router** — automatically selects the best model for your task (coding, reasoning, speed, cost)
+- **Multi-provider** — 17+ providers including free tiers and local models
+- **Automatic fallback** — transparent retry with provider switching on rate limits or errors
+- **Health monitoring** — continuous provider health tracking with automatic degradation
+- **Full-screen TUI** — rich terminal UI with syntax-highlighted markdown, sidebars, workflow tracker
 - **ReAct agent loop** — thinks, uses tools, observes results, adapts
-- **Streaming output** — real-time token-by-token display with thinking spinner
+- **Streaming output** — real-time token-by-token display
 - **File tools** — read, write, edit (with undo), search, directory listing
 - **Shell + Git** — run commands, git operations with safety checks
 - **Web fetch** — retrieve and analyze online content
 - **Permission system** — approve/deny sensitive tools per-session
 - **Context management** — auto-compacts when nearing token limits
 - **Repo mapping** — indexes your codebase so the agent understands project structure
-- **REPL** — interactive shell with `/slash` commands
-- **Single-shot** — `librecode "fix this bug"` for one-off prompts
+- **Provider-agnostic** — no provider-specific logic in the agent core
+- **Extensible** — add a provider by writing one adapter
 
 ## Requirements
 
@@ -38,7 +43,7 @@ pnpm link           # makes `librecode` available globally
 Then run:
 
 ```bash
-librecode                # interactive REPL
+librecode                # interactive TUI (auto-configures with free models)
 librecode --help         # CLI flags
 librecode "explain this" # single prompt
 ```
@@ -52,100 +57,111 @@ librecode
 
 ## Quick Start
 
-Set an API key in your environment, then launch the REPL:
+**Zero setup required.** Just run `librecode` — it automatically discovers available free models:
+
+```bash
+librecode
+```
+
+Free models are auto-detected from:
+- **Ollama** — `ollama serve` (local, no API key)
+- **Gemini** — `GEMINI_API_KEY` env var
+- **Groq** — `GROQ_API_KEY` env var
+- **OpenRouter** — `OPENROUTER_API_KEY` env var
+- **Together AI** — `TOGETHER_API_KEY` env var
+- **NVIDIA NIM** — `NVIDIA_API_KEY` env var
+
+If nothing is available, clear setup instructions are shown.
+
+### Premium providers
+
+Set an API key in your environment:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 librecode
 ```
 
-Or use a config file:
+## Model Aliases
 
-```bash
-# librecode.toml in your project root
-cat > librecode.toml << 'EOF'
-[agent]
-provider = "openai"
-model = "gpt-4o"
+Use `/model <alias>` in the TUI to switch model selection strategy:
 
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-default_model = "gpt-4o"
-EOF
-
-librecode
-```
+| Alias | Behavior |
+|---|---|
+| `best-free` | Most capable available free model (default) |
+| `fast-free` | Fastest available free model |
+| `reasoning` | Best reasoning/coding model |
+| `coding` | Best for code generation |
+| `fast` | Lowest-latency model |
+| `creative` | Most creative model |
+| `cheap` | Best value (free models get priority) |
+| `vision` | Model with vision support |
+| `local` | Best local model (Ollama) |
+| `auto` | Balanced default |
 
 ## CLI Flags
 
 | Flag | Description |
 |---|---|
-| `-m`, `--model <name>` | Model to use (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
-| `-p`, `--provider <name>` | Provider (`openai`, `anthropic`, `ollama`, `openrouter`, `gemini`) |
+| `-m`, `--model <name>` | Model or alias to use (e.g. `best-free`, `gpt-4o`) |
+| `-p`, `--provider <name>` | Provider override |
 | `-d`, `--directory <path>` | Working directory |
 | `-c`, `--config <path>` | Path to config file |
 | `-y`, `--yes` | Auto-approve all tool permissions |
 | `-v`, `--version` | Print version and exit |
 
-## REPL Commands
+## TUI Commands
 
 | Command | Description |
 |---|---|
 | `/help` | Show help |
-| `/exit`, `/quit` | Exit |
-| `/clear` | Clear conversation (keeps system prompt) |
-| `/cost` | Show token usage |
-| `/tokens` | Show context window usage |
-| `/model <name>` | Switch model (e.g. `/model gpt-4o`) |
-| `/permissions list` | List tool permissions |
-| `/permissions allow <tool>` | Always allow a tool |
-| `/permissions deny <tool>` | Deny a tool |
-| `/permissions reset <tool>` | Reset permission for a tool |
-| `/compact` | Force context compaction |
+| `/exit` | Exit |
+| `/clear` | Clear conversation |
+| `/model <alias>` | Switch model (e.g. `/model best-free`) |
+| `/status` | Session status |
+| `/tokens` | Token usage |
+| `/doctor` | Run diagnostics |
+| `/compact` | Compact context |
 
 ## Configuration
 
 Config is loaded in order of priority:
 
 1. CLI flags (`-m`, `-p`, `-d`, `-y`)
-2. `librecode.toml`, `.librecode.toml`, or `.librecode/config.toml` in working directory
-3. `~/.config/librecode/config.toml` (global)
+2. Environment variables
+3. `.rcode/config.json` in working directory
+4. `~/.config/librecode/config.json` (global)
 
-API keys can be set in config files or via environment variables (`${VAR_NAME}` syntax):
-
-```toml
-[agent]
-provider = "openai"
-model = "gpt-4o"
-max_turns = 30
-
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-default_model = "gpt-4o"
-
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"
-default_model = "claude-sonnet-4-20250514"
-
-[providers.ollama]
-base_url = "http://localhost:11434"
-default_model = "codellama"
-```
+On first run, a default config is auto-created with `defaultProvider: 'free'`.
 
 ## Architecture
 
 ```
 librecode/
 ├── packages/
-│   ├── types/       # Message, ToolCall, StreamEvent, AgentEvent, Config types
-│   ├── utils/       # Token counting, path resolution, format helpers
-│   ├── config/      # TOML config loader, CLI arg parsing, env var substitution
-│   ├── memory/      # ContextManager — token tracking, compaction, summarization
-│   ├── providers/   # OpenAI, Anthropic, Ollama, OpenRouter, Gemini + ModelRouter
-│   ├── tools/       # 9 tools + SafetyChecker + PermissionChecker
-│   ├── core/        # Agent runtime, system prompt generator, RepoMapper
-│   ├── ui/          # Terminal renderer, spinner, ANSI formatting
-│   └── cli/         # REPL, command parsing, entry point
+│   ├── types/        # Message, ToolCall, StreamEvent, Config types
+│   ├── utils/        # Token counting, path resolution, format helpers
+│   ├── config/       # Config loader, CLI arg parsing, env var substitution
+│   ├── memory/       # ContextManager — token tracking, compaction
+│   ├── providers/    # Provider & routing system
+│   │   ├── base.ts              # LLMProvider interface
+│   │   ├── model-metadata.ts    # Rich model scoring (17 curated models)
+│   │   ├── model-registry.ts    # Dynamic registry with discovery
+│   │   ├── auto-router.ts       # Intent-based model selection
+│   │   ├── health-monitor.ts    # Background health tracking
+│   │   ├── streaming-engine.ts  # Unified streaming abstraction
+│   │   ├── fallback-handler.ts  # Retry + provider switching
+│   │   ├── conversation-store.ts # State preservation across switches
+│   │   ├── provider-discovery.ts # Auto-detect local/env providers
+│   │   ├── configuration.ts     # Layered config system
+│   │   ├── free-models.ts       # Free tier aggregator
+│   │   ├── openai-compatible.ts # Generic OpenAI-compatible adapter
+│   │   ├── openai.ts / anthropic.ts / gemini.ts / ollama.ts / openrouter.ts
+│   │   └── provider-manager.ts  # Top-level orchestration
+│   ├── tools/        # 9 tools + SafetyChecker + PermissionChecker
+│   ├── core/         # Agent runtime, system prompt generator, RepoMapper
+│   ├── ui/           # Full-screen TUI, markdown renderer, sidebar
+│   └── cli/          # Entry point, command parsing
 ├── .github/workflows/ci.yml
 ├── pnpm-workspace.yaml
 ├── tsconfig.json
@@ -154,15 +170,25 @@ librecode/
 
 ## Provider Support
 
-| Provider | Streaming | Tool Calling |
-|---|---|---|
-| OpenAI | ✓ | ✓ |
-| Anthropic | ✓ | ✓ |
-| Ollama | ✓ | ✓ |
-| OpenRouter | ✓ | ✓ |
-| Gemini | ✓ | ✓ |
+| Provider | Streaming | Tool Calling | Vision | Free Tier |
+|---|---|---|---|---|
+| OpenAI | ✓ | ✓ | ✓ | |
+| Anthropic | ✓ | ✓ | ✓ | |
+| Gemini | ✓ | ✓ | ✓ | ✓ |
+| Groq | ✓ | ✓ | | ✓ |
+| OpenRouter | ✓ | ✓ | ✓ | ✓ |
+| Together AI | ✓ | ✓ | | ✓ |
+| NVIDIA NIM | ✓ | ✓ | | ✓ |
+| Ollama | ✓ | ✓ | | ✓ |
+| LM Studio | ✓ | ✓ | | ✓ |
 
-The `ModelRouter` supports automatic failover: if one provider rate-limits or errors, it tries the next in chain.
+The **AutoRouter** automatically selects the best model for each task based on:
+- Coding and reasoning capability scores
+- Current provider health (latency, error rate)
+- Model context window
+- Tool calling and vision support
+- Free vs premium
+- User preference (via aliases)
 
 ## Tools
 
@@ -198,6 +224,13 @@ pnpm clean          # Clean dist/ directories
 pnpm link           # Link librecode globally
 ```
 
+### Testing
+
+```bash
+pnpm test                    # All packages
+pnpm --filter librecode-providers test  # Provider tests only (81 tests)
+```
+
 ### Publishing
 
 ```bash
@@ -209,19 +242,26 @@ Scoped packages (`@librecode/*`) publish with public access. The CLI package is 
 
 ## Project Status
 
-All 10 packages build and lint (zero errors, zero warnings). Ready for daily use with an LLM provider API key. Under active development.
+All 10 packages build and lint (zero errors, zero warnings). 81 provider tests pass. Ready for daily use.
 
 ### What works
 
+- Zero-configuration first run with free model auto-discovery
+- Intelligent auto-router with 9 model aliases
+- Background health monitoring with automatic degradation
+- Automatic fallback with retry and provider switching
+- Unified streaming engine across all providers
 - Full ReAct agent loop (streaming + non-streaming)
-- 5 LLM providers with failover
+- 17+ LLM providers with intelligent routing
 - All 9 tools with safety checks
-- Interactive REPL with slash commands
+- Full-screen TUI with syntax-highlighted markdown
+- Conversation preservation across provider switches
 - Single-prompt mode
 - Context compaction
 - Codebase indexing (symbol-level repo map)
 - Permission system (safe tools auto-allowed, sensitive tools prompt)
 - GitHub Actions CI
+- 81 unit tests for the provider system
 
 ### Roadmap
 

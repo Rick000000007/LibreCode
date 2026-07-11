@@ -7,6 +7,18 @@ import type {
 
 export type BoxFuture<T> = Promise<T>;
 
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow: number;
+  supportsToolCalling: boolean;
+  supportsStreaming: boolean;
+  isFree: boolean;
+  /** Model category for alias selection */
+  category?: 'fast' | 'reasoning' | 'balanced' | 'small' | 'code';
+}
+
 export interface LLMProvider {
   complete(request: CompletionRequest): Promise<CompletionResponse>;
   streamComplete(request: CompletionRequest): Promise<StreamEvent[]>;
@@ -14,6 +26,20 @@ export interface LLMProvider {
   maxContextWindow(): number;
   supportsToolCalling(): boolean;
   supportsStreaming(): boolean;
+  /** List available models for this provider */
+  listModels(): Promise<ModelInfo[]>;
+  /** Whether this provider supports vision/image inputs */
+  supportsVision(): boolean;
+  /** Whether this provider supports extended reasoning/thinking */
+  supportsReasoning(): boolean;
+  /** Whether this provider supports thinking tokens (Claude-style) */
+  supportsThinking(): boolean;
+  /** Whether this provider supports MCP (Model Context Protocol) */
+  supportsMCP(): boolean;
+  /** Get current model info */
+  getModel(): ModelInfo;
+  /** Switch to a specific model */
+  setModel(modelId: string): void;
 }
 
 export abstract class BaseProvider implements LLMProvider {
@@ -22,12 +48,50 @@ export abstract class BaseProvider implements LLMProvider {
   abstract name(): string;
   abstract maxContextWindow(): number;
 
+  private _model: string = '';
+
   supportsToolCalling(): boolean {
     return true;
   }
 
   supportsStreaming(): boolean {
     return false;
+  }
+
+  supportsVision(): boolean {
+    return false;
+  }
+
+  supportsReasoning(): boolean {
+    return false;
+  }
+
+  supportsThinking(): boolean {
+    return false;
+  }
+
+  supportsMCP(): boolean {
+    return false;
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    return [this.getModel()];
+  }
+
+  getModel(): ModelInfo {
+    return {
+      id: this._model || 'unknown',
+      name: this._model || 'Unknown',
+      provider: this.name(),
+      contextWindow: this.maxContextWindow(),
+      supportsToolCalling: this.supportsToolCalling(),
+      supportsStreaming: this.supportsStreaming(),
+      isFree: false,
+    };
+  }
+
+  setModel(modelId: string): void {
+    this._model = modelId;
   }
 }
 

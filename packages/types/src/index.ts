@@ -120,6 +120,9 @@ export interface ProviderConfig {
   defaultModel: string;
   maxTokens?: number;
   temperature?: number;
+  customHeaders?: Record<string, string>;
+  organization?: string;
+  project?: string;
 }
 
 export function createDefaultProviderConfig(overrides?: Partial<ProviderConfig>): ProviderConfig {
@@ -178,6 +181,9 @@ export interface ProviderEntry {
   defaultModel?: string;
   maxTokens?: number;
   temperature?: number;
+  customHeaders?: Record<string, string>;
+  organization?: string;
+  project?: string;
 }
 
 export interface LibreConfig {
@@ -196,6 +202,48 @@ export interface ProviderMetadata {
   supportsStreaming: boolean;
   supportsToolCalling: boolean;
   docsUrl: string;
+  capabilities?: ProviderCapabilities;
+}
+
+export interface ProviderCapabilities {
+  chatCompletions: boolean;
+  responsesApi: boolean;
+  streaming: boolean;
+  vision: boolean;
+  toolCalling: boolean;
+  reasoning: boolean;
+  jsonMode: boolean;
+  embeddings: boolean;
+  modelDiscovery: boolean;
+}
+
+export function createDefaultCapabilities(): ProviderCapabilities {
+  return {
+    chatCompletions: true,
+    responsesApi: false,
+    streaming: true,
+    vision: false,
+    toolCalling: true,
+    reasoning: false,
+    jsonMode: false,
+    embeddings: false,
+    modelDiscovery: false,
+  };
+}
+
+export interface ProviderDefinition {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+  defaultModel: string;
+  description?: string;
+  requiresApiKey?: boolean;
+  hasFreeTier?: boolean;
+  website?: string;
+  docsUrl?: string;
+  capabilities?: Partial<ProviderCapabilities>;
+  customHeaders?: Record<string, string>;
 }
 
 export interface HealthCheckResult {
@@ -203,6 +251,16 @@ export interface HealthCheckResult {
   latencyMs?: number;
   error?: string;
   models?: string[];
+  diagnostics?: ConnectionDiagnostics;
+}
+
+export interface ConnectionDiagnostics {
+  dnsLookup?: string;
+  tcpConnect?: string;
+  tlsHandshake?: string;
+  httpStatus?: number;
+  contentType?: string;
+  body?: string;
 }
 
 export interface ModelInfo {

@@ -1,10 +1,19 @@
-import type { LLMProvider } from './base.js';
-import type { LibreConfig, HealthCheckResult } from 'librecode-types';
+import type { LLMProvider, ModelInfo } from './base.js';
+import type { LibreConfig, HealthCheckResult, CompletionRequest } from 'librecode-types';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';
 import { ProviderRouter } from './provider-router.js';
-import { FreeModelsProvider } from './free-models.js';
+import { FreeProvider } from './free-models.js';
+import { ModelRegistry } from './model-registry.js';
+import { AutoRouter } from './auto-router.js';
+import { HealthMonitor } from './health-monitor.js';
+import { StreamingEngine, StreamCallback } from './streaming-engine.js';
+import { FallbackHandler } from './fallback-handler.js';
+import { ConversationStore } from './conversation-store.js';
+import { ProviderDiscovery, DiscoveredProvider } from './provider-discovery.js';
+import { LayeredConfig } from './configuration.js';
+import { RoutingIntent } from './model-metadata.js';
 
 export interface ActiveProviderInfo {
   id: string;
@@ -14,19 +23,45 @@ export interface ActiveProviderInfo {
 
 export class ProviderManager {
   private configManager: ConfigurationManager;
+  private layeredConfig: LayeredConfig;
   private registry: ProviderRegistry;
   private factory: ProviderFactory;
   private router: ProviderRouter;
-  private freeModels: FreeModelsProvider;
+  private freeProvider: FreeProvider | null = null;
   private currentProvider: ActiveProviderInfo | null;
+
+  // New architecture systems
+  private modelRegistry: ModelRegistry;
+  private autoRouter: AutoRouter;
+  private healthMonitor: HealthMonitor;
+  private streamingEngine: StreamingEngine;
+  private fallbackHandler: FallbackHandler;
+  private conversationStore: ConversationStore;
+  private providerDiscovery: ProviderDiscovery;
+  private _discoveredProviders: DiscoveredProvider[] = [];
 
   constructor() {
     this.configManager = new ConfigurationManager();
+    this.layeredConfig = new LayeredConfig();
     this.registry = new ProviderRegistry();
     this.factory = new ProviderFactory(this.registry);
     this.router = new ProviderRouter();
-    this.freeModels = new FreeModelsProvider();
     this.currentProvider = null;
+
+    // Initialize new architecture
+    this.modelRegistry = new ModelRegistry();
+    this.healthMonitor = new HealthMonitor();
+    this.streamingEngine = new StreamingEngine();
+    this.conversationStore = new ConversationStore();
+    this.autoRouter = new AutoRouter(this.modelRegistry, this.healthMonitor);
+    this.fallbackHandler = new FallbackHandler(
+      this.healthMonitor,
+      this.modelRegistry,
+      this.autoRouter,
+      this.streamingEngine,
+      this.conversationStore,
+    );
+    this.providerDiscovery = new ProviderDiscovery(this.modelRegistry);
   }
 
   configFilePath(): string {
@@ -34,11 +69,7 @@ export class ProviderManager {
   }
 
   isConfigured(): boolean {
-    const config = this.configManager.load();
-    if (config.defaultProvider === 'free') {
-      return Object.values(config.providers).some((p) => p.enabled);
-    }
-    return !!config.providers[config.defaultProvider]?.enabled;
+    return true;
   }
 
   isFirstRun(): boolean {
@@ -57,10 +88,70 @@ export class ProviderManager {
     return this.registry;
   }
 
+  getModelRegistry(): ModelRegistry {
+    return this.modelRegistry;
+  }
+
+  getAutoRouter(): AutoRouter {
+    return this.autoRouter;
+  }
+
+  getHealthMonitor(): HealthMonitor {
+    return this.healthMonitor;
+  }
+
+  getStreamingEngine(): StreamingEngine {
+    return this.streamingEngine;
+  }
+
+  getFallbackHandler(): FallbackHandler {
+    return this.fallbackHandler;
+  }
+
+  getConversationStore(): ConversationStore {
+    return this.conversationStore;
+  }
+
+  getDiscoveredProviders(): DiscoveredProvider[] {
+    return [...this._discoveredProviders];
+  }
+
+  async discoverProviders(): Promise<DiscoveredProvider[]> {
+    this._discoveredProviders = await this.providerDiscovery.discoverAll();
+    return this._discoveredProviders;
+  }
+
   async initialize(): Promise<ActiveProviderInfo | null> {
-    const config = this.configManager.load();
+    const config = this.layeredConfig.merge();
     const defaultProvider = config.defaultProvider ?? 'free';
 
+    // Run auto-discovery
+    const discovered = await this.discoverProviders();
+
+    // Register discovered providers with health monitor
+    for (const dp of discovered) {
+      this.healthMonitor.register(dp.id, dp.provider);
+      this.modelRegistry.discoverFromProvider(dp.id, dp.provider).catch(() => {});
+    }
+
+    // Register built-in providers from config
+    const configProviders = this.configManager.load().providers ?? {};
+    for (const [name, entry] of Object.entries(configProviders)) {
+      if (!entry.enabled) continue;
+      if (!this.registry.exists(name)) continue;
+      try {
+        const provider = this.factory.create(name, { ...entry, enabled: true });
+        this.healthMonitor.register(name, provider);
+        this.modelRegistry.discoverFromProvider(name, provider).catch(() => {});
+      } catch {
+        continue;
+      }
+    }
+
+    // Start health monitoring
+    this.healthMonitor.start();
+
+    // Initialize routing
     if (defaultProvider === 'free') {
       return this.initializeFree();
     }
@@ -85,61 +176,74 @@ export class ProviderManager {
         model: entry.defaultModel ?? this.registry.get(id)?.defaultModel ?? 'gpt-4o',
         type: 'single',
       };
+
+      this.streamingEngine.setActiveProvider(id);
       return this.currentProvider;
     } catch {
       return null;
     }
   }
 
-  private async initializeFree(): Promise<ActiveProviderInfo | null> {
+  async initializeFree(): Promise<ActiveProviderInfo | null> {
     const config = this.configManager.load();
-    this.freeModels = new FreeModelsProvider();
-    this.router = new ProviderRouter();
+    const enrichedConfig = this.layeredConfig.getConfig();
 
-    const enabled = Object.entries(config.providers).filter(([, v]) => v.enabled);
+    const fp = new FreeProvider();
+    await fp.autoDiscover();
 
-    let freeCount = 0;
-    for (const [name, entry] of enabled) {
+    // Register configured providers as free endpoints
+    for (const [name, entry] of Object.entries(config.providers)) {
+      if (!entry.enabled) continue;
       if (!this.registry.exists(name)) continue;
-
       try {
-        const provider = this.factory.create(name, {
-          ...entry,
-          enabled: true,
-        });
-
-        if (this.registry.hasFreeTier(name) || !this.registry.requiresApiKey(name)) {
-          this.freeModels.registerFreeProvider(name, provider);
-          freeCount++;
-        }
-
-        const priority = this.registry.hasFreeTier(name) ? 10 : this.registry.requiresApiKey(name) ? 20 : 30;
-        this.router.addProvider(name, provider, priority);
+        const provider = this.factory.create(name, { ...entry, enabled: true });
+        fp.registerEndpoint(name, provider);
+        this.healthMonitor.register(name, provider);
       } catch {
         continue;
       }
     }
 
-    if (freeCount > 0) {
-      this.currentProvider = {
-        id: 'free',
-        model: 'auto (free models)',
-        type: 'free',
-      };
-      return this.currentProvider;
+    // Register discovered providers as free endpoints
+    for (const dp of this._discoveredProviders) {
+      if (!config.providers[dp.id]?.enabled) {
+        fp.registerEndpoint(dp.id, dp.provider);
+      }
     }
 
-    if (this.router.listProviders().length > 0) {
-      const firstId = this.router.listProviders()[0]!;
+    if (fp.hasEndpoints()) {
+      fp.setModel('best-free');
+      this.freeProvider = fp;
       this.currentProvider = {
-        id: firstId,
-        model: config.providers[firstId]?.defaultModel ?? 'gpt-4o',
-        type: 'single',
+        id: 'free',
+        model: 'best-free',
+        type: 'free',
       };
+
+      // Use auto-router for model routing within free provider
+      const routingConfig = enrichedConfig.routing ?? {};
+      this.autoRouter.setOptions({
+        preferFree: true,
+        defaultIntent: (routingConfig.intent as RoutingIntent) ?? 'best-free',
+      });
+
+      this.streamingEngine.setActiveProvider('free');
       return this.currentProvider;
     }
 
     return null;
+  }
+
+  async routeWithAutoRouter(request?: {
+    intent?: RoutingIntent;
+    requiresTools?: boolean;
+    requiresVision?: boolean;
+  }): Promise<{ model: string; provider: string }> {
+    const decision = await this.autoRouter.route(request ?? {});
+    return {
+      model: decision.model.id,
+      provider: decision.provider,
+    };
   }
 
   getActiveProvider(): ActiveProviderInfo | null {
@@ -147,17 +251,34 @@ export class ProviderManager {
   }
 
   getProvider(): LLMProvider {
-    if (this.currentProvider?.type === 'free' && this.freeModels.hasFreeProviders()) {
-      return this.freeModels;
+    if (this.currentProvider?.type === 'free' && this.freeProvider) {
+      return this.freeProvider;
     }
     return this.router;
+  }
+
+  getFreeProvider(): FreeProvider | null {
+    return this.freeProvider;
   }
 
   getRouter(): ProviderRouter {
     return this.router;
   }
 
+  async listFreeModels(): Promise<ModelInfo[]> {
+    if (!this.freeProvider) return [];
+    return this.freeProvider.listModels();
+  }
+
+  getFreeAliases(): Record<string, string> {
+    if (!this.freeProvider) return {};
+    return this.freeProvider.getAliases();
+  }
+
   async checkHealth(): Promise<Map<string, HealthCheckResult>> {
+    if (this.freeProvider && this.currentProvider?.type === 'free') {
+      return this.freeProvider.checkHealth();
+    }
     return this.router.checkAllHealth();
   }
 
@@ -202,5 +323,36 @@ export class ProviderManager {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  async streamWithFallback(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+  ): Promise<void> {
+    const provider = this.getProvider();
+    const providerId = this.currentProvider?.id ?? 'unknown';
+
+    this.conversationStore.begin(request, providerId);
+
+    await this.fallbackHandler.executeWithFallback(
+      providerId,
+      provider,
+      request,
+      onEvent,
+    );
+  }
+
+  // Delegate health checks
+  getProviderHealthStatus(providerId: string): 'healthy' | 'degraded' | 'unhealthy' | 'unknown' {
+    return this.healthMonitor.getStatus(providerId);
+  }
+
+  getHealthSnapshot(): Map<string, import('./health-monitor.js').HealthSnapshot> {
+    return this.healthMonitor.getSnapshot();
+  }
+
+  destroy(): void {
+    this.healthMonitor.stop();
+    this.modelRegistry.stopPeriodicDiscovery();
   }
 }

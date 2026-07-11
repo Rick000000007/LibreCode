@@ -23,8 +23,8 @@ import {
   Doctor,
   formatDoctorReport,
 } from 'librecode-providers';
-import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
-import { createRepl } from './repl.js';
+import { parseBuiltin } from './commands.js';
+import { TuiApp } from 'librecode-ui';
 
 const VERSION = '0.2.1';
 
@@ -135,7 +135,6 @@ async function handleProviderCommand(
 
 async function main(): Promise<void> {
   const cliOptions = parseArgs(process.argv);
-  const renderer = new TerminalRenderer();
   const logger = getLogger();
 
   logger.debug('Starting librecode', { version: VERSION, argv: process.argv.slice(2) });
@@ -165,7 +164,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Detect non-TTY mode (pipe) and run single-shot
+  // Detect non-TTY mode (pipe)
   const isPipe = !process.stdout.isTTY && !process.stdin.isTTY;
   if (isPipe && process.argv[2]) {
     cliOptions.prompt = process.argv.slice(2).join(' ');
@@ -185,55 +184,52 @@ async function main(): Promise<void> {
   const tools = ToolRegistry.defaultRegistry();
   const permissionChecker = new PermissionChecker(cliOptions.yes ?? false);
 
-  // Provider manager for the new system
+  // Provider manager
   const providerManager = new ProviderManager();
 
-  // First-run setup wizard - only in interactive mode
+  // First-run: auto-save default config with free provider
   if (providerManager.isFirstRun() && !cliOptions.prompt) {
-    renderer.printBanner(VERSION);
-    const registry = providerManager.getRegistry();
     const configMgr = new ConfigurationManager();
-    const wizard = new SetupWizard(registry, configMgr);
-    const configured = await wizard.run();
-    if (!configured) {
-      process.stdout.write(
-        '\n\x1B[33mNo provider configured.\x1B[39m\n' +
-        '\x1B[90m  Run \x1B[33mlibrecode provider login\x1B[39m \x1B[90mto configure one, or\x1B[39m\n' +
-        '\x1B[90m  run \x1B[33mlibrecode\x1B[39m \x1B[90mto run the setup wizard again. You can also run:\x1B[39m\n' +
-        '\x1B[90m  \x1B[33mlibrecode setup\x1B[39m \x1B[90mor\x1B[39m \x1B[33mlibrecode doctor\x1B[39m\n',
-      );
-      process.exit(0);
-    }
+    configMgr.save({ defaultProvider: 'free', providers: {} });
   }
 
-  // Initialize provider manager
+  // Initialize provider
   const active = await providerManager.initialize();
 
-  if (!active && !cliOptions.prompt) {
-    renderer.printBanner(VERSION);
-    process.stdout.write(
-      '\x1B[33mNo active provider found.\x1B[39m\n' +
-      '\x1B[90m  Run \x1B[33mlibrecode setup\x1B[39m \x1B[90mto configure a provider.\x1B[39m\n' +
-      '\x1B[90m  Run \x1B[33mlibrecode provider list\x1B[39m \x1B[90mto see configured providers.\x1B[39m\n' +
-      '\x1B[90m  Run \x1B[33mlibrecode doctor\x1B[39m \x1B[90mto run diagnostics.\x1B[39m\n',
-    );
-    process.exit(0);
-  }
-
   if (!active) {
-    process.stderr.write('\x1B[31mNo active provider found.\x1B[39m\n');
+    process.stdout.write(
+      '\x1B[33m╭──────────────────────────────────────────────────╮\x1B[39m\n' +
+      '\x1B[33m│\x1B[39m  \x1B[1mNo free model endpoints available\x1B[22m                \x1B[33m│\x1B[39m\n' +
+      '\x1B[33m╰──────────────────────────────────────────────────╯\x1B[39m\n\n' +
+      '\x1B[90m  To use free models, choose one of the following:\x1B[39m\n' +
+      '\x1B[90m  \x1B[33m1.\x1B[39m\x1B[90m Install Ollama locally:\x1B[39m\n' +
+      '\x1B[90m     Run \x1B[33mollama serve\x1B[39m\x1B[90m then restart librecode\x1B[39m\n' +
+      '\x1B[90m     (No API key needed, runs entirely offline)\x1B[39m\n' +
+      '\x1B[90m  \x1B[33m2.\x1B[39m\x1B[90m Set a free API key environment variable:\x1B[39m\n' +
+      '\x1B[90m     \x1B[33mGEMINI_API_KEY\x1B[39m\x1B[90m  — Google Gemini free tier\x1B[39m\n' +
+      '\x1B[90m     \x1B[33mGROQ_API_KEY\x1B[39m\x1B[90m   — Groq free tier (very fast)\x1B[39m\n' +
+      '\x1B[90m     \x1B[33mOPENROUTER_API_KEY\x1B[39m\x1B[90m — OpenRouter free models\x1B[39m\n' +
+      '\x1B[90m  \x1B[33m3.\x1B[39m\x1B[90m Configure a premium provider:\x1B[39m\n' +
+      '\x1B[90m     Run \x1B[33mlibrecode setup\x1B[39m\x1B[90m to run the setup wizard\x1B[39m\n',
+    );
     process.exit(1);
   }
 
-  renderer.printBanner(VERSION);
-  renderer.setStatus(workingDir, active.id, active.model);
+  // Resolve model display name for free provider
+  let modelDisplayName = active.model;
+  if (active.type === 'free') {
+    const fp = providerManager.getFreeProvider();
+    if (fp) {
+      modelDisplayName = fp.getModel().name;
+    }
+  }
 
-  // Show active provider info
-  process.stdout.write(
-    `\x1B[90mProvider: \x1B[36m${active.id}\x1B[39m \x1B[90mModel: \x1B[36m${active.model}\x1B[39m\n\n`,
-  );
+  // Show startup status for free mode
+  if (!isPipe && active.type === 'free') {
+    process.stdout.write(`\x1B[90mUsing free model: \x1B[33m${modelDisplayName}\x1B[39m\n`);
+  }
 
-  // Build agent using provider manager
+  // Build agent
   const agent = await Agent.fromProviderManager(
     providerManager,
     tools,
@@ -243,10 +239,7 @@ async function main(): Promise<void> {
   );
 
   if (!agent) {
-    renderer.showErrorWithGuidance(
-      'Failed to initialize agent.',
-      `Run \`librecode provider test ${active.id}\` to diagnose, or \`librecode doctor\` for full diagnostics.`,
-    );
+    process.stderr.write('\x1B[31mFailed to initialize agent.\x1B[39m\n');
     process.exit(1);
   }
 
@@ -257,62 +250,154 @@ async function main(): Promise<void> {
 
   // Single-shot mode
   if (cliOptions.prompt) {
+    const renderer = new TerminalRenderer();
     await runSingleTurn(agent, renderer, cliOptions.prompt);
     process.exit(0);
   }
 
-  // Interactive REPL mode
-  const getPrompt = () => getPromptIndicator(config, active.id, active.model);
-  const rl = createRepl(getPrompt());
-  let processing = false;
+  // Non-TTY mode (pipe-only)
+  if (isPipe) {
+    const renderer = new TerminalRenderer();
+    let input = '';
+    const stdin = process.stdin;
+    stdin.setEncoding('utf-8');
+    for await (const chunk of stdin) {
+      input += chunk;
+    }
+    if (input.trim()) {
+      await runSingleTurn(agent, renderer, input.trim());
+    }
+    process.exit(0);
+  }
 
-  renderer.printStatus();
+  // Get git branch for display
+  let gitBranch: string | null = null;
+  try {
+    const { execSync } = await import('node:child_process');
+    const result = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
+      cwd: workingDir,
+      encoding: 'utf-8',
+      timeout: 2000,
+    });
+    gitBranch = result.trim() || null;
+  } catch {
+    // not a git repo
+  }
 
-  rl.on('line', async (line: string) => {
-    if (processing) return;
-    processing = true;
-    try {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        rl.prompt();
-        return;
-      }
+  // ─── FULL-SCREEN TUI ──────────────────────────────────────────────
+  const tuiApp = new TuiApp({
+    provider: active.id,
+    model: active.model,
+    gitBranch,
+    workingDir,
+    onSubmit: async (input: string) => {
+      const trimmed = input.trim();
+      if (!trimmed) return;
 
       const builtin = parseBuiltin(trimmed);
       if (builtin) {
-        await handleBuiltin(builtin, agent, renderer, config, rl, getPrompt, providerManager, workingDir);
+        await handleBuiltinTui(builtin, agent, providerManager, config, workingDir, tuiApp);
         return;
       }
 
-      rl.pause();
+      tuiApp.getWorkflow().beginStep('thinking', 'Thinking');
+      tuiApp.render();
+
       try {
-        renderer.startThinking();
         if (agent.supportsStreaming()) {
+          let fullResponse = '';
           await agent.runTurnStreaming(trimmed, (event) => {
-            renderer.handleEvent(event);
+            switch (event.type) {
+              case 'text_delta':
+                fullResponse += event.delta;
+                tuiApp.appendToLast(event.delta);
+                break;
+              case 'tool_start':
+                tuiApp.addToConversation(
+                  `\x1B[90m\u2500\u2500 ${event.name}(${event.argsPreview})\x1B[39m`,
+                  'system',
+                );
+                tuiApp.getWorkflow().beginStep(event.name, event.name);
+                tuiApp.getWorkflow().setStepDetail(event.name, event.argsPreview);
+                break;
+              case 'tool_result':
+                tuiApp.getWorkflow().completeStep(event.name, event.summary);
+                if (event.success) {
+                  tuiApp.addToConversation(`\x1B[32m\u2714 ${event.summary}\x1B[39m`, 'system');
+                } else {
+                  tuiApp.addToConversation(`\x1B[31m\u2718 ${event.summary}\x1B[39m`, 'system');
+                }
+                break;
+              case 'tool_error':
+                tuiApp.getWorkflow().failStep(event.name, event.message);
+                tuiApp.addToConversation(`\x1B[33m\u26A0 ${event.name}: ${event.message}\x1B[39m`, 'system');
+                break;
+              case 'fatal_error':
+                tuiApp.addToConversation(`\x1B[31m\u2718 ${event.message}\x1B[39m`, 'system');
+                break;
+              case 'turn_complete':
+                tuiApp.addToConversation(`\x1B[90m\u2500\u2500\u2500 Turn ${event.turnNumber} \u2500\u2500\u2500\x1B[39m`, 'system');
+                break;
+            }
+            tuiApp.render();
           });
+
+          if (fullResponse) {
+            tuiApp.getWorkflow().completeStep('thinking', 'Response generated');
+          }
         } else {
-          renderer.stopThinking();
           const result = await agent.runTurn(trimmed);
-          process.stdout.write(result + '\n');
+          if (result) {
+            tuiApp.addMarkdown(result);
+            tuiApp.getWorkflow().completeStep('thinking', 'Response generated');
+          }
         }
-        renderer.updateContextUsage(...agent.contextUsage());
-        renderer.printUsage(agent.tokenUsage());
+
+        const [used, max] = agent.contextUsage();
+        const pct = max > 0 ? Math.round((used / max) * 100) : 0;
+        tuiApp.setTokenPct(pct);
+
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        renderer.handleEvent({ type: 'fatal_error', message: msg });
+        tuiApp.addToConversation(`\x1B[31mError: ${msg}\x1B[39m`, 'system');
+        tuiApp.getWorkflow().failStep('thinking', msg);
       }
-      rl.prompt();
-      rl.resume();
-    } finally {
-      processing = false;
-    }
+
+      tuiApp.render();
+    },
+    onCancel: () => {
+      tuiApp.addToConversation('\x1B[90mSession ended.\x1B[39m', 'system');
+      tuiApp.render();
+    },
+    onCommand: (cmd) => {
+      tuiApp.addToConversation(`\x1B[90mCommand: ${cmd}\x1B[39m`, 'system');
+    },
   });
 
-  rl.on('close', () => {
+  // Handle shutdown gracefully
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    tuiApp.stop();
     process.stdout.write('\n');
     process.exit(0);
-  });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  // Show welcome message
+  const welcomeProvider = active.type === 'free' ? 'Free' : active.id;
+  tuiApp.addToConversation(
+    `\x1B[36m\u250C\u2500\u2500\u2500 LibreCode v${VERSION} \u2500\u2500\u2500\u2510\x1B[39m\n` +
+    `\x1B[36m\u2502\x1B[39m Type /help for commands, Ctrl+K for palette\n` +
+    `\x1B[36m\u2502\x1B[39m Provider: ${welcomeProvider} | Model: ${modelDisplayName}\n` +
+    `\x1B[36m\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\x1B[39m`,
+    'system',
+  );
+
+  tuiApp.render();
 }
 
 function findConfig(): string | null {
@@ -328,220 +413,217 @@ function findConfig(): string | null {
   return null;
 }
 
-async function handleBuiltin(
+async function handleBuiltinTui(
   cmd: ReturnType<typeof parseBuiltin>,
   agent: Agent,
-  renderer: TerminalRenderer,
-  config: AgentConfig,
-  rl: ReturnType<typeof createRepl>,
-  getPrompt: () => string,
   providerManager?: ProviderManager,
-  workingDir?: string,
+  _config?: AgentConfig,
+  _workingDir?: string,
+  tuiApp?: TuiApp,
 ): Promise<void> {
   if (!cmd) return;
 
   switch (cmd.type) {
     case 'help':
-      process.stdout.write(printBuiltinHelp(config));
+      if (tuiApp) {
+        const helpText = [
+          '**Commands**',
+          '',
+          '`/help` - Show this help',
+          '`/exit` - Exit librecode',
+          '`/clear` - Clear conversation',
+          '`/status` - Session status',
+          '`/tokens` - Token usage',
+          '`/cost` - Session cost',
+          '`/doctor` - Run diagnostics',
+          '`/provider` - Manage providers',
+          '`/model` - Switch model',
+          '`/git` - Git operations',
+          '`/compact` - Compact context',
+          '`/workspace` - Workspace info',
+          '`/config` - Configuration',
+        ].join('\n');
+        tuiApp.addMarkdown(helpText);
+      }
       break;
     case 'exit':
-      rl.close();
-      return;
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mShutting down...\x1B[39m', 'system');
+        setTimeout(() => {
+          if (tuiApp) tuiApp.stop();
+          process.exit(0);
+        }, 200);
+      }
+      break;
     case 'clear':
       agent.clearHistory();
-      process.stdout.write('\x1B[2J\x1B[H');
+      if (tuiApp) {
+        tuiApp.getTui().clearScreen();
+        tuiApp.render();
+      }
       break;
-    case 'cost':
-      renderer.printUsage(agent.tokenUsage());
-      break;
-    case 'tokens': {
-      const [used, max] = agent.contextUsage();
-      process.stdout.write(
-        `\x1B[90mContext: ${used.toLocaleString()} / ${max.toLocaleString()} tokens (${Math.round((used / max) * 100)}%)\x1B[39m\n`,
-      );
-      break;
-    }
     case 'status': {
       const [used, max] = agent.contextUsage();
       const active = providerManager?.getActiveProvider();
-      process.stdout.write('\x1B[1mSession Status\x1B[22m\n');
-      process.stdout.write(`  \x1B[90mProvider:\x1B[39m  ${active?.id ?? 'unknown'}\n`);
-      process.stdout.write(`  \x1B[90mModel:\x1B[39m     ${active?.model ?? 'unknown'}\n`);
-      process.stdout.write(`  \x1B[90mContext:\x1B[39m   ${used.toLocaleString()} / ${max.toLocaleString()}\n`);
-      process.stdout.write(`  \x1B[90mTokens:\x1B[39m    ${agent.tokenUsage().totalTokens.toLocaleString()} total\n`);
-      if (workingDir) {
-        process.stdout.write(`  \x1B[90mWorkspace:\x1B[39m ${workingDir}\n`);
+      const pct = max > 0 ? Math.round((used / max) * 100) : 0;
+      if (tuiApp) {
+        const statusText = [
+          '**Session Status**',
+          '',
+          `- Provider: ${active?.id ?? 'unknown'}`,
+          `- Model: ${active?.model ?? 'unknown'}`,
+          `- Context: ${used.toLocaleString()} / ${max.toLocaleString()} (${pct}%)`,
+          `- Tokens: ${agent.tokenUsage().totalTokens.toLocaleString()} total`,
+        ].join('\n');
+        tuiApp.addMarkdown(statusText);
       }
-      process.stdout.write('\n');
       break;
     }
-    case 'setup': {
-      const registry = new ProviderRegistry();
-      const configMgr = new ConfigurationManager();
-      const wizard = new SetupWizard(registry, configMgr);
-      await wizard.run();
+    case 'tokens': {
+      const [used, max] = agent.contextUsage();
+      const pct = max > 0 ? Math.round((used / max) * 100) : 0;
+      if (tuiApp) {
+        tuiApp.addToConversation(
+          `\x1B[90mContext: ${used.toLocaleString()} / ${max.toLocaleString()} (${pct}%)\x1B[39m`,
+          'system',
+        );
+      }
       break;
     }
+    case 'cost':
+      if (tuiApp) {
+        tuiApp.addToConversation(
+          `\x1B[90mTokens: \u2191${agent.tokenUsage().promptTokens.toLocaleString()} \u2193${agent.tokenUsage().completionTokens.toLocaleString()} \u03A3${agent.tokenUsage().totalTokens.toLocaleString()}\x1B[39m`,
+          'system',
+        );
+      }
+      break;
     case 'doctor': {
       const doctor = new Doctor();
       const report = await doctor.run();
-      process.stdout.write(formatDoctorReport(report));
-      break;
-    }
-    case 'workspace': {
-      const dir = workingDir ?? process.cwd();
-      process.stdout.write(`\x1B[90mWorkspace:\x1B[39m ${dir}\n`);
-      try {
-        const files = fs.readdirSync(dir);
-        process.stdout.write(`\x1B[90mFiles:\x1B[39m ${files.length}\n`);
-      } catch {
-        // ignore
+      if (tuiApp) {
+        const lines = report.checks.map((c) => {
+          const icon = c.status === 'passed' ? '\u2714' : c.status === 'warning' ? '\u26A0' : '\u2718';
+          const color = c.status === 'passed' ? '\x1B[32m' : c.status === 'warning' ? '\x1B[33m' : '\x1B[31m';
+          return `${color}${icon}\x1B[39m ${c.name}: ${c.message}`;
+        });
+        tuiApp.addToConversation(lines.join('\n'), 'system');
       }
-      break;
-    }
-    case 'session': {
-      const [used, max] = agent.contextUsage();
-      process.stdout.write('\x1B[1mSession Info\x1B[22m\n');
-      process.stdout.write(`  \x1B[90mContext:\x1B[39m    ${used.toLocaleString()} / ${max.toLocaleString()}\n`);
-      process.stdout.write(`  \x1B[90mPrompt:\x1B[39m     ${agent.tokenUsage().promptTokens.toLocaleString()}\n`);
-      process.stdout.write(`  \x1B[90mCompletion:\x1B[39m ${agent.tokenUsage().completionTokens.toLocaleString()}\n`);
-      process.stdout.write(`  \x1B[90mTotal:\x1B[39m      ${agent.tokenUsage().totalTokens.toLocaleString()}\n`);
-      break;
-    }
-    case 'tools': {
-      process.stdout.write('\x1B[1mAvailable Tools\x1B[22m\n');
-      process.stdout.write('  \x1B[90mAll tools are pre-configured in the tool registry.\x1B[39m\n');
-      process.stdout.write('  \x1B[90mUse /permissions list to view tool permissions.\x1B[39m\n');
-      break;
-    }
-    case 'git': {
-      process.stdout.write(
-        '\x1B[90mGit operations are handled by the AI agent.\x1B[39m\n' +
-        '\x1B[90mAsk the agent to run a git command like "show me git status".\x1B[39m\n',
-      );
-      break;
-    }
-    case 'config': {
-      const sub = cmd.args[0];
-      if (sub === 'path') {
-        const pm = providerManager ?? new ProviderManager();
-        process.stdout.write(`\x1B[90mConfig: ${pm.configFilePath()}\x1B[39m\n`);
-      } else {
-        process.stdout.write(`\x1B[90mConfig is managed automatically.\x1B[39m\n`);
-        process.stdout.write(`\x1B[90mUse /config path to show config file location.\x1B[39m\n`);
-      }
-      break;
-    }
-    case 'logs': {
-      const logger = getLogger();
-      const logFile = logger.getLogFile();
-      if (logFile && fs.existsSync(logFile)) {
-        process.stdout.write(`\x1B[90mLog file: ${logFile}\x1B[39m\n`);
-      } else {
-        process.stdout.write('\x1B[90mNo log file available.\x1B[39m\n');
-      }
-      break;
-    }
-    case 'history': {
-      process.stdout.write('\x1B[90mHistory managed by the agent context.\x1B[39m\n');
-      break;
-    }
-    case 'model': {
-      process.stdout.write(`\x1B[90mModel change is managed by the provider system.\x1B[39m\n`);
-      process.stdout.write(`\x1B[90mUse \x1B[33mlibrecode provider switch\x1B[39m \x1B[90mto change providers.\x1B[39m\n`);
       break;
     }
     case 'provider': {
-      if (providerManager) {
-        const registry = providerManager.getRegistry();
-        const configMgr = new ConfigurationManager();
-        const sub = cmd.provider || 'current';
-        if (sub === 'list') {
-          process.stdout.write(printProviderList(providerManager.getConfig(), registry));
-        } else if (sub === 'current') {
-          process.stdout.write(printProviderCurrent(providerManager.getConfig(), registry));
-        } else if (sub === 'switch') {
-          const rest = cmd.args?.join(' ') ?? '';
-          if (rest) {
-            await handleProviderSwitch(rest, registry, configMgr);
-          } else {
-            process.stdout.write('\x1B[33mSpecify a provider to switch to.\x1B[39m\n');
-            process.stdout.write('\x1B[90m  /provider switch <name>\x1B[39m\n');
-            process.stdout.write('\x1B[90m  Available: openai, anthropic, gemini, ollama, openrouter\x1B[39m\n');
-          }
-        } else if (sub === 'login') {
-          await handleProviderLogin(registry, configMgr);
-        } else if (sub === 'logout') {
-          const rest = cmd.args?.join(' ') ?? '';
-          await handleProviderLogout(rest || undefined, registry, configMgr);
-        } else if (sub === 'test') {
-          const rest = cmd.args?.join(' ') ?? '';
-          if (rest) {
-            await handleProviderTest(rest, registry, configMgr);
-          } else {
-            process.stdout.write('\x1B[33mUsage: /provider test <name>\x1B[39m\n');
-          }
-        } else {
-          process.stdout.write('\x1B[33m/provider subcommands:\x1B[39m\n');
-          process.stdout.write('  \x1B[33mlist\x1B[39m       List configured providers\n');
-          process.stdout.write('  \x1B[33mcurrent\x1B[39m    Show active provider\n');
-          process.stdout.write('  \x1B[33mswitch\x1B[39m     Switch active provider\n');
-          process.stdout.write('  \x1B[33mlogin\x1B[39m      Configure a provider\n');
-          process.stdout.write('  \x1B[33mlogout\x1B[39m     Remove provider configuration\n');
-          process.stdout.write('  \x1B[33mtest\x1B[39m       Test provider connection\n');
-        }
-      } else {
-        process.stdout.write('\x1B[33mProvider management not available in this context.\x1B[39m\n');
+      if (tuiApp) {
+        tuiApp.addToConversation(
+          `\x1B[90mUse \x1B[33mlibrecode provider <command>\x1B[39m \x1B[90mfrom your terminal to manage providers.\x1B[39m`,
+          'system',
+        );
+      }
+      break;
+    }
+    case 'workspace': {
+      const dir = _workingDir ?? process.cwd();
+      if (tuiApp) {
+        tuiApp.addToConversation(`\x1B[90mWorkspace: ${dir}\x1B[39m`, 'system');
       }
       break;
     }
     case 'compact':
       agent.clearHistory();
-      process.stdout.write('\x1B[90mContext compacted.\x1B[39m\n');
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mContext compacted.\x1B[39m', 'system');
+      }
       break;
-    case 'permissions': {
-      const perms = agent.listPermissions();
-      const toolName = cmd.args[0];
-      switch (cmd.sub) {
-        case 'list':
-          process.stdout.write(
-            Object.entries(perms)
-              .map(([k, v]) => `  \x1B[90m${k}:\x1B[39m ${v}`)
-              .join('\n') + '\n',
-          );
-          break;
-        case 'allow':
-          if (!toolName) break;
-          agent.setPermission(toolName, true);
-          process.stdout.write(`\x1B[90mAllowed: ${toolName}\x1B[39m\n`);
-          break;
-        case 'deny':
-          if (!toolName) break;
-          agent.setPermission(toolName, false);
-          process.stdout.write(`\x1B[90mDenied: ${toolName}\x1B[39m\n`);
-          break;
-        case 'reset':
-          if (!toolName) break;
-          agent.resetPermission(toolName);
-          process.stdout.write(`\x1B[90mReset: ${toolName}\x1B[39m\n`);
-          break;
-        default:
-          process.stdout.write('\x1B[90mUnknown permission command. Use: list, allow, deny, reset\x1B[39m\n');
+    case 'model': {
+      const modelArg = (cmd as { type: 'model'; model: string }).model;
+      if (tuiApp) {
+        if (!modelArg) {
+          const fp = providerManager?.getFreeProvider();
+          if (fp) {
+            const aliases = fp.getAliases();
+            const models = await providerManager!.listFreeModels();
+            const lines = [
+              '**Free Models Available**',
+              '',
+              '**Aliases:**',
+              ...Object.entries(aliases).map(([alias, m]) => `  \`/model ${alias}\` → ${m || 'auto-best'}`),
+              '',
+              '**Available models:**',
+              ...models.map((m) => `  \`${m.id}\``),
+            ];
+            tuiApp.addMarkdown(lines.join('\n'));
+          } else {
+            tuiApp.addToConversation('\x1B[90mUse /provider switch <name> to change provider.\x1B[39m', 'system');
+          }
+        } else {
+          const fp = providerManager?.getFreeProvider();
+          if (fp && (modelArg === 'auto' || modelArg.endsWith('-free') || modelArg === 'free')) {
+            fp.setModel(modelArg);
+            const mi = fp.getModel();
+            tuiApp.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
+          } else {
+            tuiApp.addToConversation('\x1B[90mUse /provider switch to change providers, or /model auto for free.\x1B[39m', 'system');
+          }
+        }
       }
       break;
     }
-    case 'unknown': {
-      const cmdName = cmd.command.replace(/^\//, '').split(/\s+/)[0] ?? '';
-      const suggestions = ['help', 'exit', 'clear', 'cost', 'status', 'setup', 'doctor', 'provider', 'tokens', 'compact', 'workspace'];
-      const similar = suggestions.filter((s) => s.startsWith(cmdName) || cmdName.startsWith(s));
-      process.stdout.write(`\x1B[90mUnknown command: ${cmd.command}\x1B[39m\n`);
-      if (similar.length > 0) {
-        process.stdout.write(`\x1B[90m  Did you mean: /${similar[0]}?\x1B[39m\n`);
+    case 'git':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mGit operations are handled by the AI agent.\x1B[39m', 'system');
       }
-      process.stdout.write(`\x1B[90m  Type /help for available commands.\x1B[39m\n`);
+      break;
+    case 'config':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mConfig is managed automatically.\x1B[39m', 'system');
+      }
+      break;
+    case 'history':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mHistory is managed in the agent context.\x1B[39m', 'system');
+      }
+      break;
+    case 'session':
+      if (tuiApp) {
+        const [used, max] = agent.contextUsage();
+        tuiApp.addToConversation(
+          `\x1B[90mContext: ${used.toLocaleString()} / ${max.toLocaleString()}\x1B[39m`,
+          'system',
+        );
+      }
+      break;
+    case 'tools':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mAll tools are pre-configured. Use /permissions to manage.\x1B[39m', 'system');
+      }
+      break;
+    case 'logs':
+      if (tuiApp) {
+        const logFile = getLogger().getLogFile();
+        tuiApp.addToConversation(`\x1B[90mLog file: ${logFile ?? 'N/A'}\x1B[39m`, 'system');
+      }
+      break;
+    case 'permissions':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mUse /permissions list|allow|deny|reset <tool>\x1B[39m', 'system');
+      }
+      break;
+    case 'setup':
+      if (tuiApp) {
+        tuiApp.addToConversation('\x1B[90mRun \x1B[33mlibrecode setup\x1B[39m \x1B[90mfrom your terminal.\x1B[39m', 'system');
+      }
+      break;
+    case 'unknown': {
+      if (tuiApp) {
+        tuiApp.addToConversation(
+          `\x1B[90mUnknown command: ${cmd.command}\x1B[39m\n\x1B[90m  Type /help for available commands.\x1B[39m`,
+          'system',
+        );
+      }
       break;
     }
   }
+
+  if (tuiApp) tuiApp.render();
 }
 
 async function runSingleTurn(
@@ -569,6 +651,6 @@ async function runSingleTurn(
 main().catch((err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
   process.stderr.write(`\x1B[31mError: ${msg}\x1B[39m\n`);
-  process.stderr.write(`\x1B[33mRun \x1B[1mlibrecode doctor\x1B[22m to diagnose issues, or \x1B[1mlibrecode setup\x1B[22m to configure.\x1B[39m\n`);
+  process.stderr.write(`\x1B[33mRun \x1B[1mlibrecode doctor\x1B[22m to diagnose issues.\x1B[39m\n`);
   process.exit(1);
 });
