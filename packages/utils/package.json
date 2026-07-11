@@ -1,6 +1,6 @@
 {
   "name": "librecode-utils",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Shared utilities for librecode",
   "license": "MIT",
   "publishConfig": {

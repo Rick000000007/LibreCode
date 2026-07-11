@@ -8,7 +8,7 @@ import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';
 import { ProviderRouter } from './provider-router.js';
 
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 
 export class Doctor {
   private configManager: ConfigurationManager;

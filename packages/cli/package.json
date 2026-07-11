@@ -1,6 +1,6 @@
 {
   "name": "librecode",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "AI coding agent CLI",
   "license": "MIT",
   "files": [
@@ -33,18 +33,19 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode-core": "workspace:*",
-    "librecode-ui": "workspace:*",
+    "librecode": "link:",
     "librecode-config": "workspace:*",
-    "librecode-types": "workspace:*",
+    "librecode-core": "workspace:*",
+    "librecode-memory": "workspace:*",
     "librecode-providers": "workspace:*",
     "librecode-tools": "workspace:*",
-    "librecode-memory": "workspace:*",
+    "librecode-types": "workspace:*",
+    "librecode-ui": "workspace:*",
     "librecode-utils": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^1.6.0"
   }
 }
