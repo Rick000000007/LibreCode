@@ -1,12 +1,14 @@
 {
   "name": "librecode-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Context management and memory compaction for librecode",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Rick000000007/LibreCode.git"

@@ -1,9 +1,11 @@
 {
   "name": "librecode",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "AI coding agent CLI",
   "license": "MIT",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
