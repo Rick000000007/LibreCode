@@ -4,12 +4,12 @@ import type {
   StreamEvent,
   AgentEvent,
   TokenUsage,
-} from '@rcode/types';
-import { createTokenUsage } from '@rcode/types';
-import type { LLMProvider } from '@rcode/providers';
-import { ToolRegistry, PermissionChecker } from '@rcode/tools';
-import { ContextManager } from '@rcode/memory';
-import { formatArgsPreview, countMessagesTokens } from '@rcode/utils';
+} from '@librecode/types';
+import { createTokenUsage } from '@librecode/types';
+import type { LLMProvider } from '@librecode/providers';
+import { ToolRegistry, PermissionChecker } from '@librecode/tools';
+import { ContextManager } from '@librecode/memory';
+import { formatArgsPreview, countMessagesTokens } from '@librecode/utils';
 
 export { generateSystemPrompt } from './prompt.js';
 export { RepoMapper } from './repo_map.js';

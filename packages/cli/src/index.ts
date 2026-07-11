@@ -3,12 +3,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { type AgentConfig } from '@rcode/types';
-import { loadConfig, type CliOptions } from '@rcode/config';
-import { Agent, generateSystemPrompt, RepoMapper } from '@rcode/core';
-import { TerminalRenderer } from '@rcode/ui';
-import { ToolRegistry, PermissionChecker } from '@rcode/tools';
-import { ModelRouter, createProvider } from '@rcode/providers';
+import { type AgentConfig } from '@librecode/types';
+import { loadConfig, type CliOptions } from '@librecode/config';
+import { Agent, generateSystemPrompt, RepoMapper } from '@librecode/core';
+import { TerminalRenderer } from '@librecode/ui';
+import { ToolRegistry, PermissionChecker } from '@librecode/tools';
+import { ModelRouter, createProvider } from '@librecode/providers';
 import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
 import { createRepl } from './repl.js';
 
@@ -19,7 +19,7 @@ function parseArgs(argv: string[]): Partial<CliOptions> {
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === '-v' || arg === '--version') {
-      process.stdout.write(`rcode v${VERSION}\n`);
+      process.stdout.write(`librecode v${VERSION}\n`);
       process.exit(0);
     }
     switch (arg) {
@@ -58,7 +58,7 @@ function findConfig(): string | null {
     path.join(process.cwd(), 'rcode.toml'),
     path.join(process.cwd(), '.rcode.toml'),
     path.join(process.cwd(), '.rcode', 'config.toml'),
-    path.join(os.homedir(), '.config', 'rcode', 'config.toml'),
+    path.join(os.homedir(), '.config', 'librecode', 'config.toml'),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;

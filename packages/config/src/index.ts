@@ -3,7 +3,7 @@ import {
   createDefaultAgentConfig,
   type ProviderConfig,
   createDefaultProviderConfig,
-} from '@rcode/types';
+} from '@librecode/types';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -128,7 +128,7 @@ export function findConfigPath(cliConfig?: string): string | null {
   if (cliConfig) {
     return fs.existsSync(cliConfig) ? cliConfig : null;
   }
-  const homeConfig = path.join(os.homedir(), '.config', 'rcode', 'config.toml');
+  const homeConfig = path.join(os.homedir(), '.config', 'librecode', 'config.toml');
   if (fs.existsSync(homeConfig)) return homeConfig;
   return null;
 }

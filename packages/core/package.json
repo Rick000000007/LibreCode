@@ -1,10 +1,22 @@
 {
-  "name": "@rcode/core",
+  "name": "@librecode/core",
   "version": "0.1.0",
-  "description": "Core agent runtime for rcode",
+  "description": "Core agent runtime for librecode",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
+  },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rick000000007/LibreCode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rick000000007/LibreCode/issues"
+  },
+  "homepage": "https://github.com/Rick000000007/LibreCode#readme",
+  "engines": {
+    "node": ">=22.0.0"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,12 +31,12 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@rcode/types": "workspace:*",
-    "@rcode/providers": "workspace:*",
-    "@rcode/tools": "workspace:*",
-    "@rcode/memory": "workspace:*",
-    "@rcode/config": "workspace:*",
-    "@rcode/utils": "workspace:*"
+    "@librecode/types": "workspace:*",
+    "@librecode/providers": "workspace:*",
+    "@librecode/tools": "workspace:*",
+    "@librecode/memory": "workspace:*",
+    "@librecode/config": "workspace:*",
+    "@librecode/utils": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

@@ -1,6 +1,6 @@
 import { BaseTool } from './index.js';
 import { SafetyChecker } from './safety.js';
-import { resolvePath, truncateText } from '@rcode/utils';
+import { resolvePath, truncateText } from '@librecode/utils';
 import * as fs from 'node:fs/promises';
 
 export class EditFileTool extends BaseTool {

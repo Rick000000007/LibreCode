@@ -16,7 +16,7 @@ AI coding agent. Works like Claude Code, OpenCode, or Cursor — but open source
 - **Context management** — auto-compacts when nearing token limits
 - **Repo mapping** — indexes your codebase so the agent understands project structure
 - **REPL** — interactive shell with `/slash` commands
-- **Single-shot** — `rcode "fix this bug"` for one-off prompts
+- **Single-shot** — `librecode "fix this bug"` for one-off prompts
 
 ## Requirements
 
@@ -32,22 +32,22 @@ git clone https://github.com/Rick000000007/LibreCode
 cd LibreCode
 pnpm install
 pnpm build
-pnpm link           # makes `rcode` available globally
+pnpm link           # makes `librecode` available globally
 ```
 
 Then run:
 
 ```bash
-rcode                # interactive REPL
-rcode --help         # CLI flags
-rcode "explain this" # single prompt
+librecode                # interactive REPL
+librecode --help         # CLI flags
+librecode "explain this" # single prompt
 ```
 
-### From npm (not yet published)
+### From npm
 
 ```bash
-npm install -g rcode
-rcode
+npm install -g librecode
+librecode
 ```
 
 ## Quick Start
@@ -56,14 +56,14 @@ Set an API key in your environment, then launch the REPL:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
-rcode
+librecode
 ```
 
 Or use a config file:
 
 ```bash
-# rcode.toml in your project root
-cat > rcode.toml << 'EOF'
+# librecode.toml in your project root
+cat > librecode.toml << 'EOF'
 [agent]
 provider = "openai"
 model = "gpt-4o"
@@ -73,7 +73,7 @@ api_key = "${OPENAI_API_KEY}"
 default_model = "gpt-4o"
 EOF
 
-rcode
+librecode
 ```
 
 ## CLI Flags
@@ -108,8 +108,8 @@ rcode
 Config is loaded in order of priority:
 
 1. CLI flags (`-m`, `-p`, `-d`, `-y`)
-2. `rcode.toml`, `.rcode.toml`, or `.rcode/config.toml` in working directory
-3. `~/.config/rcode/config.toml` (global)
+2. `librecode.toml`, `.librecode.toml`, or `.librecode/config.toml` in working directory
+3. `~/.config/librecode/config.toml` (global)
 
 API keys can be set in config files or via environment variables (`${VAR_NAME}` syntax):
 
@@ -195,7 +195,7 @@ pnpm build:watch    # Watch mode (all packages)
 pnpm lint           # ESLint — zero errors, zero warnings enforced
 pnpm test           # Run tests
 pnpm clean          # Clean dist/ directories
-pnpm link           # Link rcode globally
+pnpm link           # Link librecode globally
 ```
 
 ### Publishing
@@ -205,7 +205,7 @@ pnpm build
 pnpm -r publish --access public
 ```
 
-Scoped packages (`@rcode/*`) publish with public access. The CLI package is unscoped.
+Scoped packages (`@librecode/*`) publish with public access. The CLI package is unscoped.
 
 ## Project Status
 

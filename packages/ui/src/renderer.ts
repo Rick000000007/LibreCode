@@ -1,4 +1,4 @@
-import type { AgentEvent, TokenUsage } from '@rcode/types';
+import type { AgentEvent, TokenUsage } from '@librecode/types';
 import { Spinner } from './spinner.js';
 
 export class TerminalRenderer {
@@ -80,7 +80,7 @@ export class TerminalRenderer {
   printBanner(version: string): void {
     process.stdout.write(
       `\x1B[36m╭────────────────────────────╮\x1B[39m\n` +
-      `\x1B[36m│ \x1B[1mrcode v${version.padEnd(4)}\x1B[22m AI coding agent\x1B[36m │\x1B[39m\n` +
+      `\x1B[36m│ librecode v${version.padEnd(4)}\x1B[22m AI coding agent\x1B[36m │\x1B[39m\n` +
       `\x1B[36m╰────────────────────────────╯\x1B[39m\n\n`,
     );
   }

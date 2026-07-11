@@ -30,6 +30,9 @@ jobs:
 
       - run: pnpm lint
 
+      - name: Verify npm pack (all packages)
+        run: pnpm -r pack
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:

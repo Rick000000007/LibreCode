@@ -7,7 +7,7 @@ import type {
   TokenUsage,
   ToolCall,
   Message,
-} from '@rcode/types';
+} from '@librecode/types';
 
 interface ProviderOptions {
   apiKey?: string;

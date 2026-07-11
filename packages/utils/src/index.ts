@@ -1,4 +1,4 @@
-import type { Message, TokenUsage } from '@rcode/types';
+import type { Message, TokenUsage } from '@librecode/types';
 
 export function truncateText(s: string, maxLen: number): string {
   const oneLine = s.split('\n').join(' ');

@@ -1,10 +1,22 @@
 {
-  "name": "@rcode/ui",
+  "name": "@librecode/ui",
   "version": "0.1.0",
-  "description": "Terminal UI for rcode",
+  "description": "Terminal UI for librecode",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
+  },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rick000000007/LibreCode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rick000000007/LibreCode/issues"
+  },
+  "homepage": "https://github.com/Rick000000007/LibreCode#readme",
+  "engines": {
+    "node": ">=22.0.0"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,7 +31,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@rcode/types": "workspace:*"
+    "@librecode/types": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

@@ -6,7 +6,7 @@ import type {
   StreamEvent,
   ToolCall,
   Message,
-} from '@rcode/types';
+} from '@librecode/types';
 
 interface ProviderOptions {
   apiKey?: string;

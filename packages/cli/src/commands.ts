@@ -1,4 +1,4 @@
-import type { AgentConfig } from '@rcode/types';
+import type { AgentConfig } from '@librecode/types';
 
 export type BuiltinCommand =
   | { type: 'help' }
@@ -79,5 +79,5 @@ export function printBuiltinHelp(config: AgentConfig): string {
 }
 
 export function getPromptIndicator(config: AgentConfig): string {
-  return `\x1B[36mrcode\x1B[39m \x1B[90m${config.model}\x1B[39m > `;
+  return `\x1B[36mlibrecode\x1B[39m \x1B[90m${config.model}\x1B[39m > `;
 }

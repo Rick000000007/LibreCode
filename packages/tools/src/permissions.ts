@@ -23,7 +23,7 @@ export class PermissionChecker {
 
   constructor(autoApprove: boolean) {
     this.autoApprove = autoApprove;
-    this.storePath = path.join(os.homedir(), '.config', 'rcode', 'permissions.json');
+    this.storePath = path.join(os.homedir(), '.config', 'librecode', 'permissions.json');
     this.loadStore();
   }
 

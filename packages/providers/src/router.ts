@@ -4,7 +4,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   StreamEvent,
-} from '@rcode/types';
+} from '@librecode/types';
 
 interface CooldownEntry {
   until: number;

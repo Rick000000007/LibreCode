@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@rcode/types';
+import type { ToolDefinition } from '@librecode/types';
 import { ReadFileTool } from './read_file.js';
 import { WriteFileTool } from './write_file.js';
 import { EditFileTool } from './edit_file.js';

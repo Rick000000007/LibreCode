@@ -1,9 +1,24 @@
 {
-  "name": "rcode-monorepo",
+  "name": "librecode-monorepo",
   "version": "0.1.0",
   "private": true,
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "cli",
+    "typescript",
+    "monorepo"
+  ],
   "description": "AI coding agent - TypeScript monorepo",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rick000000007/LibreCode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rick000000007/LibreCode/issues"
+  },
+  "homepage": "https://github.com/Rick000000007/LibreCode#readme",
   "scripts": {
     "build": "pnpm -r build",
     "build:watch": "pnpm -r --parallel build:watch",
@@ -16,13 +31,18 @@
     "test:coverage": "pnpm -r test:coverage",
     "typecheck": "pnpm -r typecheck",
     "link": "cd packages/cli && pnpm link --global",
-    "dev": "node packages/cli/dist/index.js"
+    "dev": "node packages/cli/dist/index.js",
+    "pack": "pnpm -r pack",
+    "changeset": "changeset",
+    "version": "changeset version"
   },
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=9.0.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",

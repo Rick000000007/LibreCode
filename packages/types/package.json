@@ -1,10 +1,22 @@
 {
-  "name": "@rcode/types",
+  "name": "@librecode/types",
   "version": "0.1.0",
-  "description": "Core type definitions for rcode",
+  "description": "Core type definitions for librecode",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
+  },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rick000000007/LibreCode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rick000000007/LibreCode/issues"
+  },
+  "homepage": "https://github.com/Rick000000007/LibreCode#readme",
+  "engines": {
+    "node": ">=22.0.0"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
