@@ -15,6 +15,26 @@ export { OpenRouterProvider } from './openrouter.js';
 export { GeminiProvider } from './gemini.js';
 export { ModelRouter } from './router.js';
 
+export { ConfigurationManager } from './configuration-manager.js';
+export { ProviderRegistry } from './provider-registry.js';
+export { ProviderFactory } from './provider-factory.js';
+export { ProviderRouter, ProviderRouterBuilder } from './provider-router.js';
+export { FreeModelsProvider } from './free-models.js';
+export { ProviderManager } from './provider-manager.js';
+export type { ActiveProviderInfo } from './provider-manager.js';
+export { SetupWizard } from './setup-wizard.js';
+export {
+  printProviderList,
+  printProviderCurrent,
+} from './cli-commands.js';
+export {
+  handleProviderLogin,
+  handleProviderLogout,
+  handleProviderTest,
+  handleProviderSwitch,
+  handleProviderModels,
+} from './cli-commands.js';
+
 export function createProvider(
   name: string,
   apiKey?: string,
@@ -36,6 +56,7 @@ export function createProvider(
       });
     case 'ollama':
       return new OllamaProvider({
+        apiKey,
         baseUrl: baseUrl ?? 'http://localhost:11434',
         defaultModel: defaultModel ?? 'codellama',
       });
@@ -47,6 +68,7 @@ export function createProvider(
     case 'gemini':
       return new GeminiProvider({
         apiKey,
+        baseUrl,
         defaultModel: defaultModel ?? 'gemini-2.0-flash',
       });
     default:

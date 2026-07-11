@@ -8,7 +8,19 @@ import { loadConfig, type CliOptions } from 'librecode-config';
 import { Agent, generateSystemPrompt, RepoMapper } from 'librecode-core';
 import { TerminalRenderer } from 'librecode-ui';
 import { ToolRegistry, PermissionChecker } from 'librecode-tools';
-import { ModelRouter, createProvider } from 'librecode-providers';
+import {
+  ProviderManager,
+  SetupWizard,
+  ProviderRegistry,
+  ConfigurationManager,
+  printProviderList,
+  printProviderCurrent,
+  handleProviderLogin,
+  handleProviderLogout,
+  handleProviderTest,
+  handleProviderSwitch,
+  handleProviderModels,
+} from 'librecode-providers';
 import { parseBuiltin, printBuiltinHelp, getPromptIndicator } from './commands.js';
 import { createRepl } from './repl.js';
 
@@ -53,48 +65,152 @@ function parseArgs(argv: string[]): Partial<CliOptions> {
   return options;
 }
 
-function findConfig(): string | null {
-  const candidates = [
-    path.join(process.cwd(), 'rcode.toml'),
-    path.join(process.cwd(), '.rcode.toml'),
-    path.join(process.cwd(), '.rcode', 'config.toml'),
-    path.join(os.homedir(), '.config', 'librecode', 'config.toml'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+type ProviderCliCommand =
+  | { type: 'list' }
+  | { type: 'login'; provider?: string }
+  | { type: 'logout'; provider?: string }
+  | { type: 'current' }
+  | { type: 'switch'; provider: string }
+  | { type: 'test'; provider: string }
+  | { type: 'models'; provider: string };
+
+function parseProviderArgs(argv: string[]): ProviderCliCommand | null {
+  const args = argv.slice(2);
+  if (args[0] !== 'provider') return null;
+  const sub = args[1];
+  switch (sub) {
+    case 'list':
+      return { type: 'list' };
+    case 'login':
+      return { type: 'login', provider: args[2] };
+    case 'logout':
+      return { type: 'logout', provider: args[2] };
+    case 'current':
+      return { type: 'current' };
+    case 'switch':
+      return { type: 'switch', provider: args[2] ?? '' };
+    case 'test':
+      return { type: 'test', provider: args[2] ?? '' };
+    case 'models':
+      return { type: 'models', provider: args[2] ?? '' };
+    default:
+      return null;
   }
-  return null;
+}
+
+async function handleProviderCommand(
+  cmd: ProviderCliCommand,
+  pm: ProviderManager,
+): Promise<void> {
+  const registry = pm.getRegistry();
+  const config = pm.getConfig();
+  const configMgr = new ConfigurationManager();
+
+  switch (cmd.type) {
+    case 'list':
+      process.stdout.write(printProviderList(config, registry));
+      break;
+    case 'login':
+      await handleProviderLogin(registry, configMgr);
+      break;
+    case 'logout':
+      await handleProviderLogout(cmd.provider, registry, configMgr);
+      break;
+    case 'current':
+      process.stdout.write(printProviderCurrent(config, registry));
+      break;
+    case 'switch':
+      await handleProviderSwitch(cmd.provider, registry, configMgr);
+      break;
+    case 'test':
+      await handleProviderTest(cmd.provider, registry, configMgr);
+      break;
+    case 'models':
+      await handleProviderModels(cmd.provider, registry, configMgr);
+      break;
+  }
 }
 
 async function main(): Promise<void> {
   const cliOptions = parseArgs(process.argv);
 
+  // Check if running as `librecode provider <command>`
+  const providerCmd = parseProviderArgs(process.argv);
+  if (providerCmd) {
+    const pm = new ProviderManager();
+    await handleProviderCommand(providerCmd, pm);
+    process.exit(0);
+  }
+
   const configPath = cliOptions.config
     ? path.resolve(cliOptions.config)
     : findConfig();
-  const config = loadConfig(configPath
-    ? { ...cliOptions, config: configPath }
-    : cliOptions,
+  const config = loadConfig(
+    configPath ? { ...cliOptions, config: configPath } : cliOptions,
   );
   const workingDir = cliOptions.dir
     ? path.resolve(cliOptions.dir)
     : process.cwd();
 
-  const tools = ToolRegistry.defaultRegistry();
-  const permissionChecker = new PermissionChecker(cliOptions.yes ?? false);
-  const provider = buildProvider(config);
-  const agent = new Agent(provider, tools, config, workingDir, permissionChecker);
   const renderer = new TerminalRenderer();
   const repoMapper = new RepoMapper();
+  const tools = ToolRegistry.defaultRegistry();
+  const permissionChecker = new PermissionChecker(cliOptions.yes ?? false);
+
+  // Provider manager for the new system
+  const providerManager = new ProviderManager();
+
+  // First-run setup wizard
+  if (providerManager.isFirstRun()) {
+    renderer.printBanner(VERSION);
+    const registry = providerManager.getRegistry();
+    const configMgr = new ConfigurationManager();
+    const wizard = new SetupWizard(registry, configMgr);
+    const configured = await wizard.run();
+    if (!configured) {
+      process.stdout.write(
+        '\n\x1B[33mNo provider configured.\x1B[39m\n' +
+        '\x1B[90m  Run \x1B[33mlibrecode provider login\x1B[39m \x1B[90mto configure one, or\x1B[39m\n' +
+        '\x1B[90m  run \x1B[33mlibrecode\x1B[39m \x1B[90mto run the setup wizard again.\x1B[39m\n',
+      );
+      process.exit(0);
+    }
+  }
+
+  // Initialize provider manager
+  const active = await providerManager.initialize();
 
   renderer.printBanner(VERSION);
 
-  const defaultProvider = config.providers[config.provider];
-  if (defaultProvider && !defaultProvider.apiKey && config.provider !== 'ollama') {
-    process.stderr.write(
-      `\x1B[33m⚠ No API key configured for ${config.provider}.\x1B[39m\n` +
-      `\x1B[90m  Set \x1B[1m${config.provider.toUpperCase()}_API_KEY\x1B[22m env var or create ~/.config/librecode/config.toml\x1B[39m\n\n`,
+  if (!active) {
+    process.stdout.write(
+      '\x1B[33mNo active provider found.\x1B[39m\n' +
+      '\x1B[90m  Run \x1B[33mlibrecode provider login\x1B[39m \x1B[90mto configure a provider.\x1B[39m\n' +
+      '\x1B[90m  Run \x1B[33mlibrecode provider list\x1B[39m \x1B[90mto see configured providers.\x1B[39m\n',
     );
+    process.exit(0);
+  }
+
+  // Show active provider info
+  process.stdout.write(
+    `\x1B[90mProvider: \x1B[36m${active.id}\x1B[39m \x1B[90mModel: \x1B[36m${active.model}\x1B[39m\n\n`,
+  );
+
+  // Build agent using provider manager
+  const agent = await Agent.fromProviderManager(
+    providerManager,
+    tools,
+    config,
+    workingDir,
+    permissionChecker,
+  );
+
+  if (!agent) {
+    process.stdout.write(
+      '\x1B[31mFailed to initialize agent. Check your provider configuration.\x1B[39m\n' +
+      `\x1B[90m  Run \x1B[33mlibrecode provider test ${active.id}\x1B[39m \x1B[90mto diagnose.\x1B[39m\n`,
+    );
+    process.exit(1);
   }
 
   repoMapper.indexDirectory(workingDir);
@@ -107,7 +223,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const getPrompt = () => getPromptIndicator(config);
+  const getPrompt = () => getPromptIndicator(config, active.id, active.model);
   const rl = createRepl(getPrompt());
   let processing = false;
   rl.on('line', async (line: string) => {
@@ -122,7 +238,7 @@ async function main(): Promise<void> {
 
       const builtin = parseBuiltin(trimmed);
       if (builtin) {
-        await handleBuiltin(builtin, agent, renderer, config, rl, getPrompt);
+        await handleBuiltin(builtin, agent, renderer, config, rl, getPrompt, providerManager);
         return;
       }
 
@@ -155,23 +271,17 @@ async function main(): Promise<void> {
   });
 }
 
-function buildProvider(config: AgentConfig): ModelRouter {
-  const providerMap = new Map<string, ReturnType<typeof createProvider>>();
-  const failoverChain: string[] = [];
-
-  for (const [name, providerConfig] of Object.entries(config.providers)) {
-    const provider = createProvider(
-      name,
-      providerConfig.apiKey,
-      providerConfig.baseUrl,
-      providerConfig.defaultModel,
-    );
-    const modelId = `${name}:${providerConfig.defaultModel}`;
-    providerMap.set(modelId, provider);
-    failoverChain.push(modelId);
+function findConfig(): string | null {
+  const candidates = [
+    path.join(process.cwd(), 'rcode.toml'),
+    path.join(process.cwd(), '.rcode.toml'),
+    path.join(process.cwd(), '.rcode', 'config.toml'),
+    path.join(os.homedir(), '.config', 'librecode', 'config.toml'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
   }
-
-  return new ModelRouter(providerMap, failoverChain);
+  return null;
 }
 
 async function handleBuiltin(
@@ -181,6 +291,7 @@ async function handleBuiltin(
   config: AgentConfig,
   rl: ReturnType<typeof createRepl>,
   getPrompt: () => string,
+  providerManager?: ProviderManager,
 ): Promise<void> {
   if (!cmd) return;
 
@@ -205,14 +316,35 @@ async function handleBuiltin(
       );
       break;
     }
-    case 'model':
-      config.model = cmd.model;
-      process.stdout.write(`\x1B[90mModel changed to: ${config.model}\x1B[39m\n`);
-      rl.setPrompt(getPrompt());
+    case 'model': {
+      process.stdout.write(`\x1B[90mModel change is managed by the provider system.\x1B[39m\n`);
+      process.stdout.write(`\x1B[90mUse \x1B[33mlibrecode provider switch\x1B[39m \x1B[90mto change providers.\x1B[39m\n`);
       break;
-    case 'provider':
-      process.stdout.write('\x1B[90m/provider is not yet supported in-session. Restart rcode with --provider to change.\x1B[39m\n');
+    }
+    case 'provider': {
+      if (providerManager) {
+        const registry = providerManager.getRegistry();
+        const configMgr = new ConfigurationManager();
+        const sub = cmd.provider || 'current';
+        if (sub === 'list') {
+          process.stdout.write(printProviderList(providerManager.getConfig(), registry));
+        } else if (sub === 'current') {
+          process.stdout.write(printProviderCurrent(providerManager.getConfig(), registry));
+        } else if (sub === 'switch') {
+          const rest = cmd.args?.join(' ') ?? '';
+          if (rest) {
+            await handleProviderSwitch(rest, registry, configMgr);
+          } else {
+            process.stdout.write('\x1B[33mSpecify a provider to switch to.\x1B[39m\n');
+          }
+        } else {
+          process.stdout.write('\x1B[33m/provider subcommands: list, current, switch <name>\x1B[39m\n');
+        }
+      } else {
+        process.stdout.write('\x1B[33mProvider management not available in this context.\x1B[39m\n');
+      }
       break;
+    }
     case 'compact':
       agent.clearHistory();
       process.stdout.write('\x1B[90mContext compacted.\x1B[39m\n');
@@ -263,10 +395,10 @@ async function runSingleTurn(
 ): Promise<void> {
   try {
     if (agent.supportsStreaming()) {
-        renderer.startThinking();
-        await agent.runTurnStreaming(prompt, (event) => {
-          renderer.handleEvent(event);
-        });
+      renderer.startThinking();
+      await agent.runTurnStreaming(prompt, (event) => {
+        renderer.handleEvent(event);
+      });
     } else {
       const result = await agent.runTurn(prompt);
       process.stdout.write(result + '\n');

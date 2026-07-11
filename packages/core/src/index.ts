@@ -6,7 +6,7 @@ import type {
   TokenUsage,
 } from 'librecode-types';
 import { createTokenUsage } from 'librecode-types';
-import type { LLMProvider } from 'librecode-providers';
+import type { LLMProvider, ProviderManager } from 'librecode-providers';
 import { ToolRegistry, PermissionChecker } from 'librecode-tools';
 import { ContextManager } from 'librecode-memory';
 import { formatArgsPreview, countMessagesTokens } from 'librecode-utils';
@@ -15,6 +15,8 @@ export { generateSystemPrompt } from './prompt.js';
 export { RepoMapper } from './repo_map.js';
 
 export class Agent {
+  ProviderName: string;
+  ProviderModel: string;
   private provider: LLMProvider;
   private tools: ToolRegistry;
   private messages: Message[];
@@ -30,7 +32,11 @@ export class Agent {
     config: AgentConfig,
     workingDir: string,
     permissions: PermissionChecker,
+    providerName?: string,
+    providerModel?: string,
   ) {
+    this.ProviderName = providerName ?? 'unknown';
+    this.ProviderModel = providerModel ?? config.model;
     this.provider = provider;
     this.tools = tools;
     this.messages = [];
@@ -41,6 +47,27 @@ export class Agent {
     this.contextManager = new ContextManager(
       config.maxContextTokens,
       config.compactThreshold,
+    );
+  }
+
+  static async fromProviderManager(
+    pm: ProviderManager,
+    tools: ToolRegistry,
+    config: AgentConfig,
+    workingDir: string,
+    permissions: PermissionChecker,
+  ): Promise<Agent | null> {
+    const active = await pm.initialize();
+    if (!active) return null;
+    const provider = pm.getProvider();
+    return new Agent(
+      provider,
+      tools,
+      config,
+      workingDir,
+      permissions,
+      active.id,
+      active.model,
     );
   }
 

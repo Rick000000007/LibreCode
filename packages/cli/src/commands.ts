@@ -8,7 +8,7 @@ export type BuiltinCommand =
   | { type: 'history'; cmd: string }
   | { type: 'permissions'; sub: string; args: string[] }
   | { type: 'model'; model: string }
-  | { type: 'provider'; provider: string }
+  | { type: 'provider'; provider: string; args?: string[] }
   | { type: 'compact' }
   | { type: 'tokens' }
   | { type: 'unknown'; command: string };
@@ -43,7 +43,11 @@ export function parseBuiltin(input: string): BuiltinCommand | null {
     case 'model':
       return { type: 'model', model: parts.slice(1).join(' ') };
     case 'provider':
-      return { type: 'provider', provider: parts[1] ?? '' };
+      return {
+        type: 'provider',
+        provider: parts[1] ?? '',
+        args: parts.slice(2),
+      };
     case 'compact':
       return { type: 'compact' };
     case 'tokens':
@@ -59,25 +63,28 @@ export function parseBuiltin(input: string): BuiltinCommand | null {
 export function printBuiltinHelp(config: AgentConfig): string {
   return [
     '\x1B[1mAvailable commands:\x1B[22m',
-    '  \x1B[33m/help\x1B[39m        Show this help message',
-    '  \x1B[33m/exit\x1B[39m        Exit rcode',
-    '  \x1B[33m/clear\x1B[39m       Clear conversation history (keeps system prompt)',
-    '  \x1B[33m/cost\x1B[39m        Show token usage',
-    '  \x1B[33m/tokens\x1B[39m      Show context usage',
-    '  \x1B[33m/model <name>\x1B[39m  Switch model (e.g. /model gpt-4o)',
-    '  \x1B[33m/permissions list\x1B[39m  Show tool permissions',
-    '  \x1B[33m/permissions allow <tool>\x1B[39m  Allow a tool',
-    '  \x1B[33m/permissions deny <tool>\x1B[39m   Deny a tool',
-    '  \x1B[33m/permissions reset <tool>\x1B[39m  Reset a tool\'s permission',
-    '  \x1B[33m/compact\x1B[39m     Manually compact context',
+    '  \x1B[33m/help\x1B[39m         Show this help message',
+    '  \x1B[33m/exit\x1B[39m         Exit librecode',
+    '  \x1B[33m/clear\x1B[39m        Clear conversation history (keeps system prompt)',
+    '  \x1B[33m/cost\x1B[39m         Show token usage',
+    '  \x1B[33m/tokens\x1B[39m       Show context usage',
+    '  \x1B[33m/provider list\x1B[39m    List configured providers',
+    '  \x1B[33m/provider current\x1B[39m  Show active provider',
+    '  \x1B[33m/provider switch <id>\x1B[39m  Switch active provider',
+    '  \x1B[33m/permissions <cmd>\x1B[39m  Manage tool permissions',
+    '  \x1B[33m/compact\x1B[39m      Manually compact context',
     '',
-    `  \x1B[90mProvider:\x1B[39m ${config.provider}`,
-    `  \x1B[90mModel:\x1B[39m    ${config.model}`,
     `  \x1B[90mContext:\x1B[39m  ${(config.maxContextTokens / 1000).toFixed(0)}K (compact at ${Math.round(config.compactThreshold * 100)}%)`,
     '',
   ].join('\n');
 }
 
-export function getPromptIndicator(config: AgentConfig): string {
-  return `\x1B[36mlibrecode\x1B[39m \x1B[90m${config.model}\x1B[39m > `;
+export function getPromptIndicator(
+  config: AgentConfig,
+  providerId?: string,
+  modelName?: string,
+): string {
+  const name = providerId ?? config.provider;
+  const model = modelName ?? config.model;
+  return `\x1B[36mlibrecode\x1B[39m \x1B[90m${name}:${model}\x1B[39m > `;
 }

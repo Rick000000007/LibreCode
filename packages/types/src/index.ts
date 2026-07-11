@@ -170,3 +170,47 @@ export type SafetyLevel =
   | { kind: 'safe' }
   | { kind: 'warning'; reason: string }
   | { kind: 'blocked'; reason: string };
+
+export interface ProviderEntry {
+  enabled: boolean;
+  apiKey?: string;
+  endpoint?: string;
+  defaultModel?: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+export interface LibreConfig {
+  defaultProvider: string;
+  providers: Record<string, ProviderEntry>;
+}
+
+export interface ProviderMetadata {
+  id: string;
+  name: string;
+  description: string;
+  requiresApiKey: boolean;
+  hasFreeTier: boolean;
+  website: string;
+  defaultModel: string;
+  supportsStreaming: boolean;
+  supportsToolCalling: boolean;
+  docsUrl: string;
+}
+
+export interface HealthCheckResult {
+  available: boolean;
+  latencyMs?: number;
+  error?: string;
+  models?: string[];
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow: number;
+  supportsToolCalling: boolean;
+  supportsStreaming: boolean;
+  isFree: boolean;
+}
