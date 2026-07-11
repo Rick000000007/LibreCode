@@ -22,29 +22,43 @@ librecode/
 └── package.json
 ```
 
-## Quick Start
+## Install
+
+### From source (local development)
 
 ```bash
+git clone https://github.com/Rick000000007/LibreCode
+cd LibreCode
 pnpm install
 pnpm build
+pnpm link     # makes `rcode` available globally
 ```
 
-Run in interactive REPL mode:
+Then run:
 
 ```bash
-node packages/cli/dist/index.js
+rcode                    # interactive REPL
+rcode "explain this"     # single prompt
 ```
 
-Run a single prompt:
+### From npm (once published)
 
 ```bash
-node packages/cli/dist/index.js "explain this project"
+npm install -g rcode
+# or
+pnpm add -g rcode
+```
+
+Then:
+
+```bash
+rcode
 ```
 
 ## Requirements
 
 - Node.js 22+ LTS
-- pnpm 9+
+- pnpm 9+ (for development only)
 
 ## Configuration
 
@@ -96,7 +110,24 @@ pnpm build:watch    # Watch mode
 pnpm lint           # ESLint all packages
 pnpm test           # Run tests
 pnpm clean          # Clean all dist/ directories
+pnpm link           # Link `rcode` globally for local testing
 ```
+
+### Publishing to npm
+
+```bash
+# Build first
+pnpm build
+
+# Publish all packages in dependency order
+pnpm -r publish --access public
+
+# Or publish a single package
+pnpm --filter @rcode/types publish --access public
+pnpm --filter rcode publish
+```
+
+> Scoped packages (`@rcode/*`) are published with public access. The CLI package `rcode` is unscoped.
 
 ## Project Status
 

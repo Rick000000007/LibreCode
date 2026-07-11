@@ -9,6 +9,7 @@
     "rcode": "dist/index.js"
   },
   "scripts": {
+    "prepublishOnly": "pnpm build",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "clean": "rm -rf dist",
