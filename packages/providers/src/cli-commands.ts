@@ -54,10 +54,19 @@ export function printProviderList(
   return lines.join('\n');
 }
 
+export function restoreCustomProviders(
+  registry: ProviderRegistry,
+  configManager: ConfigurationManager,
+): number {
+  const config = configManager.load();
+  return registry.restoreCustomFromConfig(config);
+}
+
 export async function handleProviderLogin(
   registry: ProviderRegistry,
   configManager: ConfigurationManager,
 ): Promise<void> {
+  restoreCustomProviders(registry, configManager);
   const providers = registry.all();
   output.write('\x1B[1mSelect a provider to configure:\x1B[22m\n\n');
   for (let i = 0; i < providers.length; i++) {
@@ -104,42 +113,46 @@ async function configureCustomProvider(
 ): Promise<void> {
   output.write('\n\x1B[36m── Custom Provider Configuration ──\x1B[39m\n\n');
 
-  const name = await rl.question('\x1B[90mProvider name (e.g. my-provider): \x1B[39m');
-  if (!name.trim()) {
+  const rawName = await rl.question('\x1B[90mProvider name (e.g. my-provider): \x1B[39m');
+  const name = rawName.trim();
+  if (!name) {
     output.write('\x1B[33mCancelled.\x1B[39m\n');
     return;
   }
 
-  const baseUrl = await rl.question('\x1B[90mBase URL (e.g. https://api.example.com/v1): \x1B[39m');
-  if (!baseUrl.trim()) {
+  const rawBaseUrl = await rl.question('\x1B[90mBase URL (e.g. https://api.example.com/v1): \x1B[39m');
+  const baseUrl = rawBaseUrl.trim();
+  if (!baseUrl) {
     output.write('\x1B[33mBase URL is required. Cancelled.\x1B[39m\n');
     return;
   }
 
-  const apiKey = await rl.question('\x1B[90mAPI key (leave blank if not needed): \x1B[39m');
-  const model = await rl.question('\x1B[90mDefault model name: \x1B[39m') || 'gpt-4o';
+  const rawKey = await rl.question('\x1B[90mAPI key (leave blank if not needed): \x1B[39m');
+  const apiKey = rawKey.trim() || undefined;
+  const rawModel = await rl.question('\x1B[90mDefault model name: \x1B[39m');
+  const model = rawModel.trim() || 'gpt-4o';
 
   registry.registerCustom({
-    id: name.trim(),
-    name: name.trim(),
-    baseUrl: baseUrl.trim(),
-    apiKey: apiKey.trim() || undefined,
-    defaultModel: model.trim(),
+    id: name,
+    name,
+    baseUrl,
+    apiKey,
+    defaultModel: model,
     description: `Custom OpenAI-compatible provider`,
-    requiresApiKey: !!apiKey.trim(),
+    requiresApiKey: !!apiKey,
   });
 
   const config = configManager.load();
-  config.providers[name.trim()] = {
+  config.providers[name] = {
     enabled: true,
-    apiKey: apiKey.trim() || undefined,
-    endpoint: baseUrl.trim(),
-    defaultModel: model.trim(),
+    apiKey,
+    endpoint: baseUrl,
+    defaultModel: model,
   };
-  config.defaultProvider = name.trim();
+  config.defaultProvider = name;
   configManager.save(config);
 
-  output.write(`\n\x1B[32m✓ Custom provider '${name.trim()}' configured successfully!\x1B[39m\n`);
+  output.write(`\n\x1B[32m✓ Custom provider '${name}' configured successfully!\x1B[39m\n`);
 }
 
 async function configureExistingProvider(
@@ -169,17 +182,19 @@ async function configureExistingProvider(
     const existing = config.providers[providerId]?.apiKey;
     if (existing) {
       output.write(`\x1B[90mCurrent API key: ${existing.slice(0, 8)}…${existing.slice(-4)}\x1B[39m\n`);
-      const overwrite = await rl.question('\x1B[33mOverwrite? (y/N): \x1B[39m');
-      if (overwrite.toLowerCase() === 'y') {
-        apiKey = await rl.question(`\x1B[90mEnter ${meta.name} API key: \x1B[39m`);
+      const rawOverwrite = await rl.question('\x1B[33mOverwrite? (y/N): \x1B[39m');
+      if (rawOverwrite.trim().toLowerCase() === 'y') {
+        const rawKey = await rl.question(`\x1B[90mEnter ${meta.name} API key: \x1B[39m`);
+        apiKey = rawKey.trim();
       } else {
         apiKey = existing;
       }
     } else {
-      apiKey = await rl.question(`\x1B[90mEnter ${meta.name} API key: \x1B[39m`);
+      const rawKey = await rl.question(`\x1B[90mEnter ${meta.name} API key: \x1B[39m`);
+      apiKey = rawKey.trim();
     }
 
-    if (!apiKey.trim()) {
+    if (!apiKey) {
       const envApiKey = builtin?.envKey ? process.env[builtin.envKey] : undefined;
       if (envApiKey) {
         apiKey = envApiKey;
@@ -191,12 +206,13 @@ async function configureExistingProvider(
     }
   }
 
-  const model = await rl.question(`\x1B[90mModel [${meta.defaultModel}]: \x1B[39m`) || meta.defaultModel;
+  const rawModel = await rl.question(`\x1B[90mModel [${meta.defaultModel}]: \x1B[39m`);
+  const model = rawModel.trim() || meta.defaultModel;
 
   config.providers[providerId] = {
     enabled: true,
-    apiKey: apiKey.trim() || undefined,
-    defaultModel: model.trim(),
+    apiKey: apiKey || undefined,
+    defaultModel: model,
   };
   config.defaultProvider = providerId;
   configManager.save(config);
@@ -204,8 +220,8 @@ async function configureExistingProvider(
   output.write(`\n\x1B[32m✓ ${meta.name} configured successfully!\x1B[39m\n`);
 
   // Test the connection
-  const test = await rl.question('\x1B[90mRun connection test? (Y/n): \x1B[39m');
-  if (test.toLowerCase() !== 'n') {
+  const rawTest = await rl.question('\x1B[90mRun connection test? (Y/n): \x1B[39m');
+  if (rawTest.trim().toLowerCase() !== 'n') {
     await handleProviderTest(providerId, registry, configManager);
   }
 }

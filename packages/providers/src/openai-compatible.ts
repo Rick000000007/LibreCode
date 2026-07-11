@@ -2,6 +2,7 @@ import { BaseProvider, LlmError } from './base.js';
 import type { ModelInfo } from './base.js';
 import { HttpClient } from './http-client.js';
 import { detectCapabilities } from './capabilities.js';
+import { classifyError } from './error-classifier.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -216,51 +217,44 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   private handleError(status: number, text: string): LlmError {
-    try {
-      const body = JSON.parse(text) as { error?: { message?: string; type?: string; code?: string } };
-      const err = body.error;
-      const msg = err?.message ?? text;
+    const classified = classifyError(status, text);
+    const msg = classified || text.slice(0, 200);
 
-      switch (status) {
-        case 401:
-        case 403: {
-          let detail = msg;
-          if (msg.includes('invalid') || msg.includes('Incorrect API key')) {
-            detail = `Invalid API key for ${this.providerName}. Check your API key and try again.`;
-          }
-          return LlmError.authError(detail);
-        }
-        case 404: {
-          const errCode = err?.code ?? '';
-          const errType = err?.type ?? '';
-          if (errCode === 'model_not_found' || errType === 'model_not_found' || msg.includes('model')) {
-            return LlmError.modelNotFound(
-              `Model '${this.defaultModel}' not found for ${this.providerName}. ` +
-              `Run \`librecode provider models ${this.providerName}\` to list available models.`,
-            );
-          }
-          return LlmError.apiError(
-            `Endpoint not found (HTTP 404). Check the base URL for ${this.providerName}.`,
-            status,
+    switch (status) {
+      case 401:
+      case 403:
+        return LlmError.authError(
+          msg.includes('Invalid API key')
+            ? msg
+            : `Invalid API key for ${this.providerName}. Check your API key and try again.`,
+        );
+      case 404: {
+        const lower = msg.toLowerCase();
+        if (lower.includes('model not found')) {
+          return LlmError.modelNotFound(
+            `Model '${this.defaultModel}' not found for ${this.providerName}. ` +
+            `Run \`librecode provider models ${this.providerName}\` to list available models.`,
           );
         }
-        case 429:
-          return LlmError.rateLimited();
-        case 400:
-          if (msg.includes('context_length') || msg.includes('context window')) {
-            return LlmError.contextExceeded(0);
-          }
-          return LlmError.apiError(`${this.providerName}: ${msg}`, status);
-        default:
-          return LlmError.apiError(`${this.providerName}: ${msg}`, status);
+        return LlmError.apiError(
+          `Endpoint not found (HTTP 404). Check the base URL for ${this.providerName}.`,
+          status,
+        );
       }
-    } catch {
-      return LlmError.apiError(`${this.providerName}: HTTP ${status} - ${text.slice(0, 200)}`, status);
+      case 429:
+        return LlmError.rateLimited();
+      case 400:
+        if (msg.includes('context_length') || msg.includes('context window')) {
+          return LlmError.contextExceeded(0);
+        }
+        return LlmError.apiError(`${this.providerName}: ${msg}`, status);
+      default:
+        return LlmError.apiError(`${this.providerName}: ${msg}`, status);
     }
   }
 
   override async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    const apiKey = this.httpClient['options']?.apiKey;
+    const apiKey = this.httpClient.getApiKey();
     if (!apiKey && !this.providerName.includes('ollama')) {
       const envKey = process.env[`${this.providerName.toUpperCase()}_API_KEY`] ||
         process.env[`${this.providerName.replace(/-/g, '_').toUpperCase()}_API_KEY`];
@@ -316,6 +310,18 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+    const apiKey = this.httpClient.getApiKey();
+    if (!apiKey && !this.providerName.includes('ollama')) {
+      const envKey = this.providerName.toUpperCase() + '_API_KEY';
+      if (!process.env[envKey.replace(/-/g, '_')] && !process.env[envKey]) {
+        throw LlmError.authError(
+          `No API key configured for ${this.providerName}.\n` +
+          `  Set ${envKey} environment variable or\n` +
+          `  run \`librecode provider login ${this.providerName}\` to configure.`,
+        );
+      }
+    }
+
     const body: Record<string, unknown> = {
       model: request.model || this.defaultModel,
       messages: convertMessages(request.messages),
@@ -339,6 +345,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
     const responseBody = result.body;
     const lines = responseBody.split('\n');
+    let hasContent = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -353,6 +360,13 @@ export class OpenAICompatibleProvider extends BaseProvider {
       try {
         const chunk = JSON.parse(data) as OpenAiStreamChunk;
 
+        if ('error' in chunk) {
+          const errChunk = chunk as unknown as { error: { message?: string; type?: string; code?: string } };
+          throw LlmError.apiError(
+            `${this.providerName}: streaming error - ${errChunk.error?.message ?? JSON.stringify(errChunk.error)}`,
+          );
+        }
+
         if (chunk.usage) {
           usage = {
             promptTokens: chunk.usage.prompt_tokens,
@@ -364,6 +378,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
         const choice = chunk.choices?.[0];
         if (choice) {
           if (choice.delta.content) {
+            hasContent = true;
             events.push({ type: 'text_delta', delta: choice.delta.content });
           }
 
@@ -378,10 +393,18 @@ export class OpenAICompatibleProvider extends BaseProvider {
               });
             }
           }
+
+          if (choice.finish_reason === 'content_filter') {
+            events.push({ type: 'error', message: 'Content filtered by provider safety system.' });
+          }
         }
-      } catch {
-        // skip malformed JSON
+      } catch (err) {
+        if (err instanceof LlmError) throw err;
       }
+    }
+
+    if (!hasContent && events.length === 0) {
+      throw LlmError.apiError(`${this.providerName}: Empty streaming response received`);
     }
 
     events.push({ type: 'done', usage });

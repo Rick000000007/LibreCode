@@ -1,4 +1,5 @@
-import type { ProviderMetadata, ProviderDefinition } from 'librecode-types';
+import type { ProviderMetadata, ProviderDefinition, ProviderCapabilities } from 'librecode-types';
+import type { LibreConfig } from 'librecode-types';
 
 interface BuiltinProvider {
   id: string;
@@ -366,7 +367,26 @@ export class ProviderRegistry {
   }
 
   registerCustom(definition: ProviderDefinition): void {
-    this.customProviders.set(definition.id, definition);
+    if (!definition.id || !definition.id.trim()) {
+      throw new Error('Custom provider must have a non-empty id.');
+    }
+    const id = definition.id.trim();
+    if (this.providers.has(id)) {
+      throw new Error(
+        `Cannot register custom provider '${id}': a built-in provider with this id already exists. ` +
+        `Choose a different name.`,
+      );
+    }
+    if (this.customProviders.has(id)) {
+      throw new Error(
+        `Duplicate custom provider: '${id}' is already registered. ` +
+        `Remove it first or choose a different name.`,
+      );
+    }
+    if (!definition.baseUrl || !definition.baseUrl.trim()) {
+      throw new Error(`Custom provider '${id}' must have a non-empty baseUrl.`);
+    }
+    this.customProviders.set(id, definition);
   }
 
   unregisterCustom(id: string): boolean {
@@ -375,6 +395,77 @@ export class ProviderRegistry {
 
   getCustomDefinitions(): ProviderDefinition[] {
     return Array.from(this.customProviders.values());
+  }
+
+  restoreCustomFromConfig(config: LibreConfig): number {
+    let count = 0;
+    for (const [id, entry] of Object.entries(config.providers)) {
+      if (this.providers.has(id)) continue;
+      if (this.customProviders.has(id)) continue;
+      if (!entry.endpoint) continue;
+
+      try {
+        this.customProviders.set(id, {
+          id,
+          name: id,
+          baseUrl: entry.endpoint,
+          apiKey: entry.apiKey,
+          defaultModel: entry.defaultModel ?? 'gpt-4o',
+          description: `Custom OpenAI-compatible provider`,
+          requiresApiKey: !!entry.apiKey || entry.endpoint !== 'http://localhost:11434/v1',
+        });
+        count++;
+      } catch {
+        /* skip invalid entries */
+      }
+    }
+    return count;
+  }
+
+  deriveCapabilities(id: string): ProviderCapabilities {
+    const builtin = this.providers.get(id);
+
+    if (builtin) {
+      return {
+        chatCompletions: true,
+        responsesApi: false,
+        streaming: builtin.supportsStreaming,
+        vision: false,
+        toolCalling: builtin.supportsToolCalling,
+        reasoning: false,
+        jsonMode: false,
+        embeddings: false,
+        modelDiscovery: false,
+      };
+    }
+
+    const custom = this.customProviders.get(id);
+    if (custom?.capabilities) {
+      return {
+        chatCompletions: true,
+        responsesApi: false,
+        streaming: true,
+        vision: false,
+        toolCalling: true,
+        reasoning: false,
+        jsonMode: false,
+        embeddings: false,
+        modelDiscovery: false,
+        ...custom.capabilities,
+      };
+    }
+
+    return {
+      chatCompletions: true,
+      responsesApi: false,
+      streaming: true,
+      vision: false,
+      toolCalling: true,
+      reasoning: false,
+      jsonMode: false,
+      embeddings: false,
+      modelDiscovery: false,
+    };
   }
 
   private toMetadata(p: BuiltinProvider): ProviderMetadata {

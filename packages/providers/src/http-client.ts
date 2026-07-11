@@ -1,5 +1,6 @@
 import * as dns from 'node:dns';
 import { type ConnectionDiagnostics } from 'librecode-types';
+import { classifyError } from './error-classifier.js';
 
 export interface HttpClientOptions {
   baseUrl: string;
@@ -12,6 +13,7 @@ export interface HttpClientOptions {
   retryDelay?: number;
   proxyUrl?: string;
   preferIpv4?: boolean;
+  allowRetryOnNonIdempotent?: boolean;
 }
 
 export interface HttpResponse {
@@ -35,6 +37,12 @@ const DEFAULT_RETRY: RetryPolicy = {
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+
+function isIdempotentMethod(method: string): boolean {
+  return IDEMPOTENT_METHODS.has(method.toUpperCase());
+}
+
 function isRetryableError(err: Error): boolean {
   const msg = err.message.toLowerCase();
   return (
@@ -50,37 +58,6 @@ function isRetryableError(err: Error): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function classifyError(status: number, body: string): string {
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const errObj = parsed['error'] as Record<string, unknown> | undefined;
-    if (errObj) {
-      const msg = String(errObj['message'] ?? '');
-      const code = String(errObj['code'] ?? '');
-      const type = String(errObj['type'] ?? '');
-
-      if (status === 401) {
-        if (msg.includes('invalid')) return `Invalid API key: ${msg}`;
-        if (code === 'invalid_api_key') return 'Invalid API key. Check your API key and try again.';
-        return `Authentication failed (HTTP 401): ${msg}`;
-      }
-      if (status === 403) return `Access forbidden (HTTP 403): ${msg}`;
-      if (status === 404) {
-        if (type === 'model_not_found' || code === 'model_not_found') {
-          return `Model not found: ${msg}`;
-        }
-        return `Endpoint not found (HTTP 404): ${msg}. Check the base URL.`;
-      }
-      if (status === 429) return `Rate limit exceeded. ${msg}`;
-      if (status >= 500) return `Server error (HTTP ${status}): ${msg}`;
-      return msg;
-    }
-    return body.slice(0, 200);
-  } catch {
-    return body.slice(0, 200);
-  }
 }
 
 function getHostname(baseUrl: string): string {
@@ -112,6 +89,12 @@ async function dnsLookup(hostname: string, _preferIpv4: boolean): Promise<Connec
   return diag;
 }
 
+function shouldRetryOnStatus(status: number, method: string, allowNonIdempotent: boolean): boolean {
+  if (!RETRYABLE_STATUSES.has(status)) return false;
+  if (isIdempotentMethod(method)) return true;
+  return allowNonIdempotent;
+}
+
 export class HttpClient {
   private options: HttpClientOptions;
   private baseUrl: URL;
@@ -121,9 +104,18 @@ export class HttpClient {
       timeout: 30000,
       maxRetries: 3,
       retryDelay: 1000,
+      allowRetryOnNonIdempotent: false,
       ...options,
     };
     this.baseUrl = new URL(options.baseUrl);
+  }
+
+  getApiKey(): string | undefined {
+    return this.options.apiKey;
+  }
+
+  getOptions(): Readonly<HttpClientOptions> {
+    return this.options;
   }
 
   async request(method: string, path: string, body?: unknown, stream?: boolean): Promise<HttpResponse> {
@@ -156,13 +148,17 @@ export class HttpClient {
 
         const result = await this.doFetch(method, url, diag, body, stream);
 
-        if (!stream && result.status >= 200 && result.status < 300) {
+        if (result.status >= 200 && result.status < 300) {
           result.diagnostics = diag;
           return result;
         }
 
-        if (!stream && result.status >= 400) {
-          if (RETRYABLE_STATUSES.has(result.status) && attempt < retryPolicy.maxRetries) {
+        if (result.status >= 400) {
+          if (
+            !stream &&
+            shouldRetryOnStatus(result.status, method, this.options.allowRetryOnNonIdempotent ?? false) &&
+            attempt < retryPolicy.maxRetries
+          ) {
             lastError = new Error(`HTTP ${result.status}: ${result.body.slice(0, 100)}`);
             continue;
           }
@@ -176,7 +172,11 @@ export class HttpClient {
         return result;
       } catch (err) {
         if (err instanceof Error) {
-          if (isRetryableError(err) && attempt < retryPolicy.maxRetries) {
+          if (
+            isRetryableError(err) &&
+            (isIdempotentMethod(method) || (this.options.allowRetryOnNonIdempotent ?? false)) &&
+            attempt < retryPolicy.maxRetries
+          ) {
             lastError = err;
             continue;
           }
@@ -219,13 +219,17 @@ export class HttpClient {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.options.timeout ?? 30000);
 
+    const fetchOptions: RequestInit = {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    };
+
+
+
     try {
-      const response = await fetch(url.toString(), {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
+      const response = await fetch(url.toString(), fetchOptions);
 
       diag.httpStatus = response.status;
       diag.contentType = response.headers.get('content-type') ?? undefined;
@@ -332,6 +336,8 @@ export function createHttpClient(config: {
   project?: string;
   customHeaders?: Record<string, string>;
   timeout?: number;
+  proxyUrl?: string;
+  allowRetryOnNonIdempotent?: boolean;
 }): HttpClient {
   return new HttpClient({
     baseUrl: config.baseUrl,
@@ -342,5 +348,7 @@ export function createHttpClient(config: {
     timeout: config.timeout ?? 30000,
     maxRetries: 3,
     retryDelay: 1000,
+    proxyUrl: config.proxyUrl,
+    allowRetryOnNonIdempotent: config.allowRetryOnNonIdempotent,
   });
 }

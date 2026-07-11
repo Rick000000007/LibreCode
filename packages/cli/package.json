@@ -33,7 +33,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode": "link:",
     "librecode-config": "workspace:*",
     "librecode-core": "workspace:*",
     "librecode-memory": "workspace:*",
