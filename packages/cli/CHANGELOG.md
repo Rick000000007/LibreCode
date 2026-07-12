@@ -1,5 +1,23 @@
 # librecode
 
+## 0.3.2
+
+### Patch Changes
+
+- [`fc22ce0`](https://github.com/Rick000000007/LibreCode/commit/fc22ce0ea85822c813b51bad792e35fa00d129a8) Thanks [@Rick000000007](https://github.com/Rick000000007)! - fix: CLI startup exiting immediately and unhandled slash command errors
+
+- [`22e7734`](https://github.com/Rick000000007/LibreCode/commit/22e7734b68b820f8ad14e6043df1277e83d4d300) Thanks [@Rick000000007](https://github.com/Rick000000007)! - fix: Improve error message visibility in TUI and fix FreeProvider fallback mechanism to properly try the next provider when the primary API is unreachable or rate limited.
+
+- Updated dependencies [[`22e7734`](https://github.com/Rick000000007/LibreCode/commit/22e7734b68b820f8ad14e6043df1277e83d4d300)]:
+  - librecode-providers@0.3.2
+  - librecode-core@0.3.2
+  - librecode-types@0.3.2
+  - librecode-config@0.3.2
+  - librecode-utils@0.3.2
+  - librecode-memory@0.3.2
+  - librecode-tools@0.3.2
+  - librecode-ui@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes
