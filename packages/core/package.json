@@ -1,6 +1,6 @@
 {
   "name": "librecode-core",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Core agent runtime for librecode",
   "license": "MIT",
   "publishConfig": {
