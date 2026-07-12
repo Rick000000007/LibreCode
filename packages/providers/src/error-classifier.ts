@@ -4,29 +4,31 @@ export function classifyError(status: number, body: string): string {
     const errObj = parsed['error'];
     if (errObj !== null && typeof errObj === 'object') {
       const error = errObj as Record<string, unknown>;
-      const msg = String(error['message'] ?? '');
-      const code = String(error['code'] ?? '');
-      const type = String(error['type'] ?? '');
+      const msg = String(error['message'] ?? '').trim();
+      const code = String(error['code'] ?? '').trim();
+      const type = String(error['type'] ?? '').trim();
 
       if (status === 401) {
-        if (msg.includes('invalid')) return `Invalid API key: ${msg}`;
+        if (msg && msg.includes('invalid')) return `Invalid API key: ${msg}`;
         if (code === 'invalid_api_key') return 'Invalid API key. Check your API key and try again.';
-        return `Authentication failed (HTTP 401): ${msg}`;
+        return `Authentication failed (HTTP 401)${msg ? ': ' + msg : '. Check your API key.'}`;
       }
-      if (status === 403) return `Access forbidden (HTTP 403): ${msg}`;
+      if (status === 403) return `Access forbidden (HTTP 403)${msg ? ': ' + msg : ''}`;
       if (status === 404) {
         if (type === 'model_not_found' || code === 'model_not_found') {
-          return `Model not found: ${msg}`;
+          return `Model not found${msg ? ': ' + msg : ''}`;
         }
-        return `Endpoint not found (HTTP 404): ${msg}. Check the base URL.`;
+        return `Endpoint not found (HTTP 404)${msg ? ': ' + msg : ''}. Check the base URL.`;
       }
-      if (status === 429) return `Rate limit exceeded. ${msg}`;
-      if (status >= 500) return `Server error (HTTP ${status}): ${msg}`;
-      return msg;
+      if (status === 429) return `Rate limit exceeded.${msg ? ' ' + msg : ' Please wait and try again.'}`;
+      if (status >= 500) return `Server error (HTTP ${status})${msg ? ': ' + msg : ''}`;
+      return msg || `API error (HTTP ${status})${code ? ', code: ' + code : ''}${type ? ', type: ' + type : ''}`;
     }
-    return body.slice(0, 200);
+    const trimmedBody = body.trim().slice(0, 200);
+    return trimmedBody || `HTTP error ${status}`;
   } catch {
-    return body.slice(0, 200);
+    const trimmedBody = body.trim().slice(0, 200);
+    return trimmedBody || `HTTP error ${status}`;
   }
 }
 

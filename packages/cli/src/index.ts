@@ -23,6 +23,8 @@ import {
   Doctor,
   formatDoctorReport,
 } from 'librecode-providers';
+import { LibreError } from 'librecode-utils';
+import { LlmError } from 'librecode-providers';
 import { globalCommandRegistry } from './command-framework.js';
 import './commands-impl.js';
 import { TuiApp } from 'librecode-ui';
@@ -379,8 +381,33 @@ async function main(): Promise<void> {
         tuiApp.setTokenPct(pct);
 
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        let msg = '';
+        let suggestion = '';
+
+        if (err instanceof LlmError) {
+          msg = err.message || `Provider error (${err.code})`;
+          if (err.code === 'auth_error') {
+            suggestion = 'Set your API key as an environment variable (e.g. GEMINI_API_KEY, GROQ_API_KEY, NVIDIA_API_KEY) then restart.';
+          } else if (err.code === 'unavailable') {
+            suggestion = 'No free providers found. Set a free API key or run `ollama serve` for local models.';
+          } else if (err.code === 'rate_limited') {
+            suggestion = 'Wait a moment before sending another message, or switch providers with /model.';
+          }
+        } else if (err instanceof LibreError) {
+          msg = err.message || `${err.code}: ${err.category}`;
+          suggestion = err.recoverySuggestion ?? '';
+        } else if (err instanceof Error) {
+          msg = err.message || 'Unknown error';
+        } else {
+          msg = String(err) || 'Unknown error';
+        }
+
+        if (!msg) msg = 'An unknown error occurred. Run /doctor to diagnose.';
+
         tuiApp.addToConversation(`\x1B[31mError: ${msg}\x1B[39m`, 'system');
+        if (suggestion) {
+          tuiApp.addToConversation(`\x1B[33m  Tip: ${suggestion}\x1B[39m`, 'system');
+        }
         tuiApp.getWorkflow().failStep('thinking', msg);
       }
 

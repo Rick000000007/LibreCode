@@ -6,6 +6,7 @@ import type {
   HealthCheckResult,
 } from 'librecode-types';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
+import { LibreError } from 'librecode-utils';
 
 /**
  * Built-in free model definitions.
@@ -359,13 +360,27 @@ export class FreeProvider extends BaseProvider {
         return result;
       } catch (err) {
         if (err instanceof LlmError) {
+          if (err.code === 'auth_error') {
+            // Auth errors are not transient — skip this endpoint but try others
+            this.recordFailure(endpointId);
+            lastError = err;
+            continue;
+          }
           if (err.isRateLimit() || err.isTransient()) {
             this.recordFailure(endpointId);
             lastError = err;
             continue;
           }
-          // Re-throw non-transient errors
-          throw err;
+          // Other LlmErrors: try next provider before giving up
+          this.recordFailure(endpointId);
+          lastError = err;
+          continue;
+        }
+        // HttpClient throws LibreError (not LlmError) — treat as transient and try next provider
+        if (err instanceof Error) {
+          this.recordFailure(endpointId);
+          lastError = LlmError.apiError(err.message || `Provider ${endpointId} failed`);
+          continue;
         }
         throw err;
       }
@@ -406,12 +421,25 @@ export class FreeProvider extends BaseProvider {
         return;
       } catch (err) {
         if (err instanceof LlmError) {
+          if (err.code === 'auth_error') {
+            this.recordFailure(endpointId);
+            lastError = err;
+            continue;
+          }
           if (err.isRateLimit() || err.isTransient()) {
             this.recordFailure(endpointId);
             lastError = err;
             continue;
           }
-          throw err;
+          this.recordFailure(endpointId);
+          lastError = err;
+          continue;
+        }
+        // HttpClient throws LibreError (not LlmError) — treat as transient and try next provider
+        if (err instanceof Error) {
+          this.recordFailure(endpointId);
+          lastError = LlmError.apiError(err.message || `Provider ${endpointId} failed`);
+          continue;
         }
         throw err;
       }
