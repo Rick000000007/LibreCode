@@ -30,7 +30,7 @@ export async function detectCapabilities(
 
     if (caps.chatCompletions && result.status === 200) {
       try {
-        const parsed = JSON.parse(result.body) as Record<string, unknown>;
+        const parsed = JSON.parse(result.body as string) as Record<string, unknown>;
         const usage = parsed['usage'] as Record<string, unknown> | undefined;
         if (usage && typeof usage === 'object') {
           caps.chatCompletions = true;
@@ -92,7 +92,7 @@ async function testToolCalling(httpClient: HttpClient, model: string): Promise<b
       stream: false,
     });
     if (result.status !== 200) return false;
-    const parsed = JSON.parse(result.body) as Record<string, unknown>;
+    const parsed = JSON.parse(result.body as string) as Record<string, unknown>;
     const choices = parsed['choices'] as Array<Record<string, unknown>> | undefined;
     if (!choices || choices.length === 0) return false;
     const message = choices[0]?.['message'] as Record<string, unknown> | undefined;

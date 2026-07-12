@@ -139,7 +139,7 @@ async function configureCustomProvider(
     apiKey,
     defaultModel: model,
     description: `Custom OpenAI-compatible provider`,
-    requiresApiKey: !!apiKey,
+    requiresApiKey: true,
   });
 
   const config = configManager.load();
@@ -234,7 +234,7 @@ export async function handleProviderLogout(
   const config = configManager.load();
 
   if (providerId) {
-    if (!registry.exists(providerId) && !config.providers[providerId]) {
+    if (!config.providers[providerId]) {
       output.write(`\x1B[31mProvider '${providerId}' is not configured.\x1B[39m\n`);
       return;
     }
@@ -436,12 +436,19 @@ export async function handleProviderModels(
   const baseUrl = entry?.endpoint ?? registry.getBaseUrl(providerId) ?? 'https://api.openai.com/v1';
 
   const factory = new ProviderFactory(registry);
-  const provider = factory.create(providerId, {
-    enabled: true,
-    apiKey,
-    endpoint: baseUrl,
-    defaultModel: entry?.defaultModel ?? meta?.defaultModel,
-  }) as OpenAICompatibleProvider;
+  let provider: OpenAICompatibleProvider;
+
+  try {
+    provider = factory.create(providerId, {
+      enabled: true,
+      apiKey,
+      endpoint: baseUrl,
+      defaultModel: entry?.defaultModel ?? meta?.defaultModel,
+    }) as OpenAICompatibleProvider;
+  } catch (err) {
+    output.write(`\x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+    return;
+  }
 
   output.write(`\x1B[1m${meta?.name ?? providerId} Models\x1B[22m\n`);
   output.write(`\x1B[90mEndpoint: ${baseUrl}\x1B[39m\n\n`);

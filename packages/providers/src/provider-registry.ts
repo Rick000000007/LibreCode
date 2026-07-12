@@ -284,18 +284,7 @@ export class ProviderRegistry {
 
   all(): ProviderMetadata[] {
     const builtin = Array.from(this.providers.values()).map((p) => this.toMetadata(p));
-    const custom = Array.from(this.customProviders.values()).map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description ?? `Custom OpenAI-compatible provider`,
-      requiresApiKey: p.requiresApiKey ?? !!p.apiKey,
-      hasFreeTier: p.hasFreeTier ?? false,
-      website: p.website ?? '',
-      defaultModel: p.defaultModel,
-      supportsStreaming: true,
-      supportsToolCalling: true,
-      docsUrl: p.docsUrl ?? '',
-    }));
+    const custom = Array.from(this.customProviders.values()).map((p) => this.customToMetadata(p));
     return [...builtin, ...custom];
   }
 
@@ -303,21 +292,23 @@ export class ProviderRegistry {
     const builtin = this.providers.get(id);
     if (builtin) return this.toMetadata(builtin);
     const custom = this.customProviders.get(id);
-    if (custom) {
-      return {
-        id: custom.id,
-        name: custom.name,
-        description: custom.description ?? `Custom OpenAI-compatible provider`,
-        requiresApiKey: custom.requiresApiKey ?? !!custom.apiKey,
-        hasFreeTier: custom.hasFreeTier ?? false,
-        website: custom.website ?? '',
-        defaultModel: custom.defaultModel,
-        supportsStreaming: true,
-        supportsToolCalling: true,
-        docsUrl: custom.docsUrl ?? '',
-      };
-    }
-    return undefined;
+    return custom ? this.customToMetadata(custom) : undefined;
+  }
+
+  private customToMetadata(p: ProviderDefinition): ProviderMetadata {
+    const defaults = this.deriveCapabilities(p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      description: p.description ?? `Custom OpenAI-compatible provider`,
+      requiresApiKey: p.requiresApiKey ?? !!p.apiKey,
+      hasFreeTier: p.hasFreeTier ?? false,
+      website: p.website ?? '',
+      defaultModel: p.defaultModel,
+      supportsStreaming: defaults.streaming,
+      supportsToolCalling: defaults.toolCalling,
+      docsUrl: p.docsUrl ?? '',
+    };
   }
 
   getBuiltin(id: string): BuiltinProvider | undefined {

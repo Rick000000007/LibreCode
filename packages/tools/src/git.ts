@@ -89,6 +89,9 @@ export class GitTool extends BaseTool {
           }
           cmd += ` checkout ${extraArgs}`;
           break;
+        case 'init':
+          cmd += ' init';
+          break;
         case 'run':
           if (!extraArgs) {
             throw new Error(
@@ -99,7 +102,7 @@ export class GitTool extends BaseTool {
           break;
         default:
           throw new Error(
-            `Unknown git action: ${action}. Supported: status, diff, log, add, commit, branch, checkout, run`,
+            `Unknown git action: ${action}. Supported: status, diff, log, add, commit, branch, checkout, init, run`,
           );
       }
 

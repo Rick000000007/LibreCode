@@ -173,7 +173,24 @@ describe('ProviderRegistry', () => {
       expect(caps.modelDiscovery).toBe(false);
     });
 
-    it('returns default capabilities for custom provider', () => {
+    it('returns custom capabilities for custom provider when provided', () => {
+      registry.registerCustom({
+        id: 'my-provider',
+        name: 'My Provider',
+        baseUrl: 'https://my-api.example.com/v1',
+        defaultModel: 'my-model',
+        capabilities: {
+          streaming: false,
+          toolCalling: false,
+        },
+      });
+      const caps = registry.deriveCapabilities('my-provider');
+      expect(caps.streaming).toBe(false);
+      expect(caps.toolCalling).toBe(false);
+      expect(caps.chatCompletions).toBe(true);
+    });
+
+    it('returns default capabilities for custom provider without capabilities defined', () => {
       registry.registerCustom({
         id: 'my-provider',
         name: 'My Provider',
@@ -181,7 +198,6 @@ describe('ProviderRegistry', () => {
         defaultModel: 'my-model',
       });
       const caps = registry.deriveCapabilities('my-provider');
-      expect(caps.chatCompletions).toBe(true);
       expect(caps.streaming).toBe(true);
       expect(caps.toolCalling).toBe(true);
     });

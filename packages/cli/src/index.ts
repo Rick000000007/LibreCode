@@ -108,6 +108,9 @@ async function handleProviderCommand(
   const config = pm.getConfig();
   const configMgr = new ConfigurationManager();
 
+  // Ensure custom providers are registered from config before any operation
+  registry.restoreCustomFromConfig(config);
+
   switch (cmd.type) {
     case 'list':
       process.stdout.write(printProviderList(config, registry));

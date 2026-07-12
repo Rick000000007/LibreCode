@@ -1,11 +1,12 @@
 export function classifyError(status: number, body: string): string {
   try {
     const parsed = JSON.parse(body) as Record<string, unknown>;
-    const errObj = parsed['error'] as Record<string, unknown> | undefined;
-    if (errObj) {
-      const msg = String(errObj['message'] ?? '');
-      const code = String(errObj['code'] ?? '');
-      const type = String(errObj['type'] ?? '');
+    const errObj = parsed['error'];
+    if (errObj !== null && typeof errObj === 'object') {
+      const error = errObj as Record<string, unknown>;
+      const msg = String(error['message'] ?? '');
+      const code = String(error['code'] ?? '');
+      const type = String(error['type'] ?? '');
 
       if (status === 401) {
         if (msg.includes('invalid')) return `Invalid API key: ${msg}`;

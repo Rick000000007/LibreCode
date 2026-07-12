@@ -42,13 +42,10 @@ export class ProviderFactory {
       apiKey = process.env[envKey] || undefined;
     }
 
-    const requiresKey = meta.requiresApiKey || (builtin?.requiresApiKey ?? true);
-    if (requiresKey && !apiKey && !trimmedName.includes('ollama')) {
+    if (!apiKey && meta.requiresApiKey) {
       const envKey = this.registry.getEnvKey(trimmedName);
       throw LlmError.authError(
-        `No API key configured for ${meta.name ?? trimmedName}.\n` +
-        `  Set the ${envKey} environment variable or\n` +
-        `  run \`librecode provider login ${trimmedName}\` to save one in config.`,
+        `No API key found for provider '${trimmedName}'. Set it via config or the appropriate environment variable (${envKey}), or run \`librecode provider login ${trimmedName}\`.`,
       );
     }
 

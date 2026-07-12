@@ -159,7 +159,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       const result = await this.httpClient.request('GET', '/models');
       if (result.status !== 200) return [this.getModel()];
 
-      const parsed = JSON.parse(result.body) as {
+      const parsed = JSON.parse(result.body as string) as {
         data?: Array<{ id: string }>;
       };
       return (parsed.data ?? []).map((m) => ({
@@ -282,10 +282,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
     const result = await this.httpClient.request('POST', '/chat/completions', body);
 
     if (result.status !== 200) {
-      throw this.handleError(result.status, result.body);
+      throw this.handleError(result.status, result.body as string);
     }
 
-    const resp = JSON.parse(result.body) as OpenAiResponse;
+    const resp = JSON.parse(result.body as string) as OpenAiResponse;
     const choice = resp.choices[0];
     if (!choice) {
       throw LlmError.apiError(`${this.providerName}: No choices in response`);
@@ -337,14 +337,14 @@ export class OpenAICompatibleProvider extends BaseProvider {
     const result = await this.httpClient.request('POST', '/chat/completions', body);
 
     if (result.status !== 200) {
-      throw this.handleError(result.status, result.body);
+      throw this.handleError(result.status, result.body as string);
     }
 
     const events: StreamEvent[] = [];
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     const responseBody = result.body;
-    const lines = responseBody.split('\n');
+    const lines = (responseBody as string).split('\n');
     let hasContent = false;
 
     for (const line of lines) {

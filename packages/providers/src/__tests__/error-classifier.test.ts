@@ -40,6 +40,21 @@ describe('classifyError', () => {
     const body = JSON.stringify({ detail: 'something broke' });
     expect(classifyError(400, body)).toContain('something broke');
   });
+
+  it('handles primitive error value (string) instead of object', () => {
+    const body = JSON.stringify({ error: 'Critical failure' });
+    expect(classifyError(500, body)).toBe('{"error":"Critical failure"}');
+  });
+
+  it('handles null error value', () => {
+    const body = JSON.stringify({ error: null });
+    expect(classifyError(500, body)).toBe('{"error":null}');
+  });
+
+  it('truncates long non-error bodies', () => {
+    const longBody = 'a'.repeat(300);
+    expect(classifyError(400, longBody)).toHaveLength(200);
+  });
 });
 
 describe('isNetworkError', () => {

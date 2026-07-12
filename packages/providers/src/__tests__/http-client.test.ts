@@ -1,110 +1,267 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { HttpClient, createHttpClient } from '../http-client.js';
+import * as dns from 'node:dns';
+
+vi.mock('node:dns', () => ({
+  promises: {
+    resolve: vi.fn(),
+    resolve4: vi.fn(),
+  },
+}));
 
 describe('HttpClient', () => {
+  const baseUrl = 'https://api.example.com/v1';
+
   beforeEach(() => {
-    vi.resetModules();
+    vi.stubGlobal('fetch', vi.fn());
+    vi.clearAllMocks();
   });
 
-  it('getOptions returns idempotent retry config', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client1 = new HttpClient({ baseUrl: 'https://api.example.com/v1' });
-    expect(client1.getOptions().allowRetryOnNonIdempotent).toBe(false);
-
-    const client2 = new HttpClient({ baseUrl: 'https://api.example.com/v1', allowRetryOnNonIdempotent: true });
-    expect(client2.getOptions().allowRetryOnNonIdempotent).toBe(true);
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it('accepts allowRetryOnNonIdempotent option', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({
-      baseUrl: 'https://api.example.com/v1',
-      allowRetryOnNonIdempotent: true,
-      maxRetries: 1,
-      retryDelay: 1,
+  describe('Basic Configuration', () => {
+    it('constructs with default options', () => {
+      const client = new HttpClient({ baseUrl });
+      const opts = client.getOptions();
+      expect(opts.timeout).toBe(30000);
+      expect(opts.maxRetries).toBe(3);
+      expect(opts.retryDelay).toBe(1000);
+      expect(opts.allowRetryOnNonIdempotent).toBe(false);
     });
-    const opts = client.getOptions();
-    expect(opts.allowRetryOnNonIdempotent).toBe(true);
-    expect(opts.maxRetries).toBe(1);
-  });
 
-  it('getApiKey returns the configured API key', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({ baseUrl: 'https://api.example.com/v1', apiKey: 'sk-test' });
-    expect(client.getApiKey()).toBe('sk-test');
-  });
-
-  it('getApiKey returns undefined when not configured', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({ baseUrl: 'https://api.example.com/v1' });
-    expect(client.getApiKey()).toBeUndefined();
-  });
-
-  it('constructs with default options', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({ baseUrl: 'https://api.example.com/v1' });
-    const opts = client.getOptions();
-    expect(opts.timeout).toBe(30000);
-    expect(opts.maxRetries).toBe(3);
-    expect(opts.retryDelay).toBe(1000);
-    expect(opts.allowRetryOnNonIdempotent).toBe(false);
-  });
-
-  it('constructs with custom timeout', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({ baseUrl: 'https://api.example.com/v1', timeout: 10000 });
-    const opts = client.getOptions();
-    expect(opts.timeout).toBe(10000);
-  });
-
-  it('accepts customHeaders option', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({
-      baseUrl: 'https://api.example.com/v1',
-      customHeaders: { 'X-Custom': 'value' },
+    it('accepts custom options', () => {
+      const client = new HttpClient({ 
+        baseUrl, 
+        timeout: 10000, 
+        maxRetries: 5, 
+        retryDelay: 500, 
+        allowRetryOnNonIdempotent: true 
+      });
+      const opts = client.getOptions();
+      expect(opts.timeout).toBe(10000);
+      expect(opts.maxRetries).toBe(5);
+      expect(opts.retryDelay).toBe(500);
+      expect(opts.allowRetryOnNonIdempotent).toBe(true);
     });
-    const opts = client.getOptions();
-    expect(opts.customHeaders).toEqual({ 'X-Custom': 'value' });
+
+    it('getApiKey returns configured key', () => {
+      const client = new HttpClient({ baseUrl, apiKey: 'sk-test' });
+      expect(client.getApiKey()).toBe('sk-test');
+    });
   });
 
-  it('accepts proxyUrl option', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({
-      baseUrl: 'https://api.example.com/v1',
-      proxyUrl: 'http://proxy:8080',
+  describe('Request Execution & Retries', () => {
+    it('returns successful response', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => JSON.stringify({ result: 'ok' }),
+      }));
+
+      const client = new HttpClient({ baseUrl });
+      const res = await client.request('GET', '/test');
+      expect(res.status).toBe(200);
+      expect(res.body).toBe(JSON.stringify({ result: 'ok' }));
     });
-    const opts = client.getOptions();
-    expect(opts.proxyUrl).toBe('http://proxy:8080');
+
+    it('retries idempotent methods (GET) on 500 error', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          headers: new Headers(),
+          text: async () => 'Internal Server Error',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => 'Success',
+        });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
+      const res = await client.request('GET', '/test');
+      
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(res.status).toBe(200);
+    });
+
+    it('does NOT retry non-idempotent methods (POST) on 500 error by default', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        text: async () => 'Internal Server Error',
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
+      
+      await expect(client.request('POST', '/test', { data: 'val' }))
+        .rejects.toThrow(/HTTP 500/);
+      
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries non-idempotent methods (POST) when allowRetryOnNonIdempotent is true', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          headers: new Headers(),
+          text: async () => 'Error',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => 'Success',
+        });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1, allowRetryOnNonIdempotent: true });
+      const res = await client.request('POST', '/test', { data: 'val' });
+      
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(res.status).toBe(200);
+    });
+
+    it('retries on HTTP 429 (Rate Limit)', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          headers: new Headers(),
+          text: async () => 'Too Many Requests',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => 'Success',
+        });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
+      const res = await client.request('GET', '/test');
+      
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(res.status).toBe(200);
+    });
+
+    it('stops retrying after maxRetries is reached', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        text: async () => 'Persistent Error',
+      }));
+
+      const client = new HttpClient({ baseUrl, maxRetries: 2, retryDelay: 1 });
+      await expect(client.request('GET', '/test')).rejects.toThrow();
+      
+      // 1 initial + 2 retries = 3 calls
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
+    });
   });
 
-  it('accepts org and project options', async () => {
-    const { HttpClient } = await import('../http-client.js');
-    const client = new HttpClient({
-      baseUrl: 'https://api.example.com/v1',
-      organization: 'my-org',
-      project: 'my-project',
+  describe('Streaming', () => {
+    it('returns a ReadableStream when stream: true', async () => {
+      const mockStream = new ReadableStream();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: mockStream,
+      }));
+
+      const client = new HttpClient({ baseUrl });
+      const res = await client.request('GET', '/test', undefined, true);
+      
+      expect(res.body).toBeInstanceOf(ReadableStream);
     });
-    const opts = client.getOptions();
-    expect(opts.organization).toBe('my-org');
-    expect(opts.project).toBe('my-project');
+
+    it('returns buffered text even when stream: true if response is not ok', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: new Headers(),
+        text: async () => 'Unauthorized Access',
+      }));
+
+      const client = new HttpClient({ baseUrl });
+      // The request method should throw for 401, and we check that the error message
+      // came from the buffered text.
+      await expect(client.request('GET', '/test', undefined, true))
+        .rejects.toThrow(/Unauthorized Access/);
+    });
+  });
+
+  describe('Network & DNS', () => {
+    it('handles request timeouts', async () => {
+      const abortError = new Error('The operation was aborted');
+      (abortError as any).name = 'AbortError';
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+      const client = new HttpClient({ baseUrl, timeout: 10 });
+      await expect(client.request('GET', '/test')).rejects.toThrow(/Request timeout/);
+    });
+
+    it('handles DNS resolution based on preferIpv4', async () => {
+      const resolveMock = vi.mocked(dns.promises.resolve);
+      const resolve4Mock = vi.mocked(dns.promises.resolve4);
+      
+      resolveMock.mockResolvedValue(['1.1.1.1']);
+      resolve4Mock.mockResolvedValue(['1.1.1.1']);
+      
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => 'ok',
+      }));
+
+      const clientV4 = new HttpClient({ baseUrl, preferIpv4: true });
+      await clientV4.request('GET', '/test');
+      expect(resolve4Mock).toHaveBeenCalled();
+
+      const clientAny = new HttpClient({ baseUrl, preferIpv4: false });
+      await clientAny.request('GET', '/test');
+      expect(resolveMock).toHaveBeenCalled();
+    });
+  });
+
+  describe('Error Enhancement', () => {
+    it('preserves statusCode and cause in enhanced errors', async () => {
+      const originalError = new Error('Network Failure');
+      (originalError as any).statusCode = 503;
+      
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(originalError));
+
+      const client = new HttpClient({ baseUrl });
+      try {
+        await client.request('GET', '/test');
+      } catch (err: any) {
+        expect(err.statusCode).toBe(503);
+        expect(err.cause).toBe(originalError);
+      }
+    });
   });
 });
 
 describe('createHttpClient', () => {
-  it('creates an HttpClient with default retry config', async () => {
-    const { createHttpClient } = await import('../http-client.js');
-    const client = createHttpClient({ baseUrl: 'https://api.example.com/v1' });
-    expect(client.getOptions().maxRetries).toBe(3);
-    expect(client.getOptions().retryDelay).toBe(1000);
-  });
-
-  it('propagates proxyUrl and allowRetryOnNonIdempotent', async () => {
-    const { createHttpClient } = await import('../http-client.js');
-    const client = createHttpClient({
-      baseUrl: 'https://api.example.com/v1',
-      proxyUrl: 'http://proxy:8080',
-      allowRetryOnNonIdempotent: true,
+  it('correctly propagates retry options', () => {
+    const client = createHttpClient({ 
+      baseUrl: 'https://api.example.com/v1', 
+      maxRetries: 10, 
+      retryDelay: 200 
     });
-    expect(client.getOptions().proxyUrl).toBe('http://proxy:8080');
-    expect(client.getOptions().allowRetryOnNonIdempotent).toBe(true);
+    const opts = client.getOptions();
+    expect(opts.maxRetries).toBe(10);
+    expect(opts.retryDelay).toBe(200);
   });
 });

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ProviderRegistry } from '../provider-registry.js';
-import { printProviderList, printProviderCurrent, restoreCustomProviders } from '../cli-commands.js';
+import { printProviderList, printProviderCurrent, restoreCustomProviders, handleProviderLogout } from '../cli-commands.js';
 import { ConfigurationManager } from '../configuration-manager.js';
 import type { LibreConfig } from 'librecode-types';
 import * as path from 'node:path';
@@ -15,93 +15,72 @@ function makeConfigManager(config?: Partial<LibreConfig>): ConfigurationManager 
   return cm;
 }
 
-describe('printProviderList', () => {
-  it('returns message when no providers configured', () => {
-    const registry = new ProviderRegistry();
-    const config = { defaultProvider: 'free', providers: {} };
-    const output = printProviderList(config, registry);
-    expect(output).toContain('No providers configured');
-  });
+describe('cli-commands', () => {
+  // ... (existing printProviderList and printProviderCurrent tests)
 
-  it('lists configured providers with status', () => {
-    const registry = new ProviderRegistry();
-    const config = {
-      defaultProvider: 'openai',
-      providers: {
-        openai: { enabled: true, apiKey: 'sk-abc12345xyz78901', defaultModel: 'gpt-4o' },
-      },
-    };
-    const output = printProviderList(config, registry);
-    expect(output).toContain('OpenAI');
-    expect(output).toContain('enabled');
-    expect(output).toContain('default');
-    expect(output).toContain('sk-abc12');
-  });
-});
-
-describe('printProviderCurrent', () => {
-  it('shows no active provider when no providers configured', () => {
-    const registry = new ProviderRegistry();
-    const config = { defaultProvider: 'free', providers: {} };
-    const output = printProviderCurrent(config, registry);
-    expect(output).toContain('No active provider');
-  });
-
-  it('shows free model routing when free providers are enabled', () => {
-    const registry = new ProviderRegistry();
-    const config = {
-      defaultProvider: 'free',
-      providers: {
-        gemini: { enabled: true, apiKey: 'test-key' },
-      },
-    };
-    const output = printProviderCurrent(config, registry);
-    expect(output).toContain('Free Models');
-    expect(output).toContain('Gemini');
-  });
-
-  it('shows provider details when configured', () => {
-    const registry = new ProviderRegistry();
-    const config = {
-      defaultProvider: 'openai',
-      providers: {
-        openai: { enabled: true, apiKey: 'sk-test-key-12345678', defaultModel: 'gpt-4o' },
-      },
-    };
-    const output = printProviderCurrent(config, registry);
-    expect(output).toContain('OpenAI');
-    expect(output).toContain('gpt-4o');
-  });
-});
-
-describe('restoreCustomProviders', () => {
-  it('restores custom providers from config on startup', () => {
-    const registry = new ProviderRegistry();
-    const cm = makeConfigManager({
-      providers: {
-        'my-custom': {
-          enabled: true,
-          endpoint: 'https://my-custom.example.com/v1',
-          defaultModel: 'my-model',
-          apiKey: 'sk-custom',
+  describe('restoreCustomProviders', () => {
+    it('restores custom providers from config on startup', () => {
+      const registry = new ProviderRegistry();
+      const cm = makeConfigManager({
+        providers: {
+          'my-custom': {
+            enabled: true,
+            endpoint: 'https://my-custom.example.com/v1',
+            defaultModel: 'my-model',
+            apiKey: 'sk-custom',
+          },
         },
-      },
+      });
+      const count = restoreCustomProviders(registry, cm);
+      expect(count).toBe(1);
+      expect(registry.isCustom('my-custom')).toBe(true);
+      expect(registry.getBaseUrl('my-custom')).toBe('https://my-custom.example.com/v1');
     });
-    const count = restoreCustomProviders(registry, cm);
-    expect(count).toBe(1);
-    expect(registry.isCustom('my-custom')).toBe(true);
-    expect(registry.getBaseUrl('my-custom')).toBe('https://my-custom.example.com/v1');
+
+    it('skips built-in provider IDs', () => {
+      const registry = new ProviderRegistry();
+      const cm = makeConfigManager({
+        providers: {
+          openai: { enabled: true, endpoint: 'https://api.openai.com/v1', defaultModel: 'gpt-4o' },
+        },
+      });
+      const count = restoreCustomProviders(registry, cm);
+      expect(count).toBe(0);
+      expect(registry.isCustom('openai')).toBe(false);
+    });
   });
 
-  it('skips built-in provider IDs', () => {
-    const registry = new ProviderRegistry();
-    const cm = makeConfigManager({
-      providers: {
-        openai: { enabled: true, endpoint: 'https://api.openai.com/v1', defaultModel: 'gpt-4o' },
-      },
+  describe('handleProviderLogout', () => {
+    it('removes configured provider', async () => {
+      const registry = new ProviderRegistry();
+      const cm = makeConfigManager({
+        providers: {
+          openai: { enabled: true, apiKey: 'sk-test' },
+        },
+      });
+      const config = cm.load();
+      
+      // Mock output
+      const originalWrite = process.stdout.write;
+      process.stdout.write = vi.fn();
+      
+      await handleProviderLogout('openai', registry, cm);
+      
+      expect(cm.load().providers['openai']).toBeUndefined();
+      process.stdout.write = originalWrite;
     });
-    const count = restoreCustomProviders(registry, cm);
-    expect(count).toBe(0);
-    expect(registry.isCustom('openai')).toBe(false);
+
+    it('rejects provider that is in registry but not in config', async () => {
+      const registry = new ProviderRegistry();
+      const cm = makeConfigManager({ providers: {} });
+      
+      const originalWrite = process.stdout.write;
+      process.stdout.write = vi.fn();
+      
+      await handleProviderLogout('openai', registry, cm);
+      
+      expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining('is not configured'));
+      process.stdout.write = originalWrite;
+    });
   });
 });

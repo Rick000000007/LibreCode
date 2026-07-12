@@ -19,7 +19,7 @@ export interface HttpClientOptions {
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
-  body: string;
+  body: string | ReadableStream;
   diagnostics: ConnectionDiagnostics;
 }
 
@@ -78,11 +78,16 @@ function getPort(baseUrl: string): number {
   }
 }
 
-async function dnsLookup(hostname: string, _preferIpv4: boolean): Promise<ConnectionDiagnostics> {
+async function dnsLookup(hostname: string, preferIpv4: boolean): Promise<ConnectionDiagnostics> {
   const diag: ConnectionDiagnostics = {};
   try {
-    const addresses = await dns.promises.resolve4(hostname);
-    diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
+    if (preferIpv4) {
+      const addresses = await dns.promises.resolve4(hostname);
+      diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
+    } else {
+      const addresses = await dns.promises.resolve(hostname);
+      diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
+    }
   } catch (err) {
     diag.dnsLookup = `${hostname} -> DNS failed: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -159,10 +164,10 @@ export class HttpClient {
             shouldRetryOnStatus(result.status, method, this.options.allowRetryOnNonIdempotent ?? false) &&
             attempt < retryPolicy.maxRetries
           ) {
-            lastError = new Error(`HTTP ${result.status}: ${result.body.slice(0, 100)}`);
+            lastError = new Error(`HTTP ${result.status}: ${(result.body as string).slice(0, 100)}`);
             continue;
           }
-          const errorMsg = classifyError(result.status, result.body);
+          const errorMsg = classifyError(result.status, result.body as string);
           lastError = new Error(errorMsg);
           (lastError as Error & { statusCode?: number }).statusCode = result.status;
           throw lastError;
@@ -198,7 +203,7 @@ export class HttpClient {
     url: URL,
     diag: ConnectionDiagnostics,
     body?: unknown,
-    _stream?: boolean,
+    stream?: boolean,
   ): Promise<HttpResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -226,13 +231,30 @@ export class HttpClient {
       signal: controller.signal,
     };
 
-
-
     try {
       const response = await fetch(url.toString(), fetchOptions);
 
       diag.httpStatus = response.status;
       diag.contentType = response.headers.get('content-type') ?? undefined;
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        return {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body: errorBody,
+          diagnostics: diag,
+        };
+      }
+
+      if (stream && response.body) {
+        return {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body: response.body,
+          diagnostics: diag,
+        };
+      }
 
       const text = await response.text();
       return {
@@ -253,79 +275,111 @@ export class HttpClient {
 
   private enhanceError(err: Error, url: string, diag: ConnectionDiagnostics): Error {
     const msg = err.message;
+    const enhanced = new Error(msg);
+    (enhanced as any).cause = err;
+    if ('statusCode' in err) {
+      (enhanced as any).statusCode = (err as any).statusCode;
+    }
 
     if (msg.includes('ENOTFOUND') || diag.dnsLookup?.includes('DNS failed')) {
       const hostname = getHostname(url);
-      return new Error(
+      const dnsErr = new Error(
         `DNS lookup failed for ${hostname}. Check the base URL and your internet connection.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      dnsErr.cause = err;
+      if ('statusCode' in err) (dnsErr as any).statusCode = (err as any).statusCode;
+      return dnsErr;
     }
 
     if (msg.includes('ECONNREFUSED')) {
       const hostname = getHostname(url);
       const port = getPort(url);
-      return new Error(
+      const connErr = new Error(
         `Connection refused: ${hostname}:${port}. The server may be down or not accepting connections.\n` +
         `  URL: ${url}\n` +
         `  Detail: Make sure the service is running and the port is correct.`,
       );
+      connErr.cause = err;
+      if ('statusCode' in err) (connErr as any).statusCode = (err as any).statusCode;
+      return connErr;
     }
 
     if (msg.includes('ECONNRESET')) {
-      return new Error(
+      const resetErr = new Error(
         `Connection reset by peer. The server closed the connection unexpectedly.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      resetErr.cause = err;
+      if ('statusCode' in err) (resetErr as any).statusCode = (err as any).statusCode;
+      return resetErr;
     }
 
     if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
       const hostname = getHostname(url);
-      return new Error(
+      const timeoutErr = new Error(
         `Connection timed out: ${hostname}. The server is not responding.\n` +
         `  URL: ${url}\n` +
         `  Detail: Check your network connection or increase the timeout.`,
       );
+      timeoutErr.cause = err;
+      if ('statusCode' in err) (timeoutErr as any).statusCode = (err as any).statusCode;
+      return timeoutErr;
     }
 
     if (msg.includes('CERT') || msg.includes('certificate') || msg.includes('SSL')) {
-      return new Error(
+      const sslErr = new Error(
         `SSL certificate error. The server's SSL certificate is invalid.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      sslErr.cause = err;
+      if ('statusCode' in err) (sslErr as any).statusCode = (err as any).statusCode;
+      return sslErr;
     }
 
     if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('Authentication')) {
-      return new Error(
+      const authErr = new Error(
         `Authentication failed. Check your API key.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      authErr.cause = err;
+      if ('statusCode' in err) (authErr as any).statusCode = (err as any).statusCode;
+      return authErr;
     }
 
     if (msg.includes('429') || msg.includes('rate limit')) {
-      return new Error(
+      const rateErr = new Error(
         `Rate limit exceeded. Try again later.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      rateErr.cause = err;
+      if ('statusCode' in err) (rateErr as any).statusCode = (err as any).statusCode;
+      return rateErr;
     }
 
     const statusMatch = msg.match(/HTTP (\d+)/);
     if (statusMatch) {
-      return new Error(
+      const httpErr = new Error(
         `HTTP ${statusMatch[1]} error from server.\n` +
         `  URL: ${url}\n` +
         `  Detail: ${msg}`,
       );
+      httpErr.cause = err;
+      if ('statusCode' in err) (httpErr as any).statusCode = (err as any).statusCode;
+      return httpErr;
     }
 
-    return new Error(
+    const finalErr = new Error(
       `Request failed.\n  URL: ${url}\n  Detail: ${msg}`,
     );
+    finalErr.cause = err;
+    if ('statusCode' in err) (finalErr as any).statusCode = (err as any).statusCode;
+    return finalErr;
   }
 }
 
@@ -336,6 +390,8 @@ export function createHttpClient(config: {
   project?: string;
   customHeaders?: Record<string, string>;
   timeout?: number;
+  maxRetries?: number;
+  retryDelay?: number;
   proxyUrl?: string;
   allowRetryOnNonIdempotent?: boolean;
 }): HttpClient {
@@ -346,8 +402,8 @@ export function createHttpClient(config: {
     project: config.project,
     customHeaders: config.customHeaders,
     timeout: config.timeout ?? 30000,
-    maxRetries: 3,
-    retryDelay: 1000,
+    maxRetries: config.maxRetries ?? 3,
+    retryDelay: config.retryDelay ?? 1000,
     proxyUrl: config.proxyUrl,
     allowRetryOnNonIdempotent: config.allowRetryOnNonIdempotent,
   });

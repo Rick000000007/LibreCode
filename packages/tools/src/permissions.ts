@@ -17,6 +17,8 @@ interface PermissionStore {
 }
 
 export class PermissionChecker {
+  static SAFE_TOOLS = SAFE_TOOLS;
+
   private permissions: Map<string, PermissionLevel> = new Map();
   private storePath: string;
   private autoApprove: boolean;

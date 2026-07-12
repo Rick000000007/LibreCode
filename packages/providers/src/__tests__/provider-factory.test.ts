@@ -61,15 +61,15 @@ describe('ProviderFactory', () => {
     }
   });
 
-  it('throws auth error when provider requires API key but none provided', () => {
+  it('throws specific auth error when provider requires API key but none provided', () => {
     expect(() =>
       factory.create('openai', {
         enabled: true,
       }),
-    ).toThrow('No API key configured');
+    ).toThrow(/No API key found for provider 'openai'/);
   });
 
-  it('reads API key from environment variable', () => {
+  it('reads API key from environment variable as fallback', () => {
     process.env['OPENAI_API_KEY'] = 'sk-env-test';
     const provider = factory.create('openai', { enabled: true });
     expect(provider).toBeDefined();
