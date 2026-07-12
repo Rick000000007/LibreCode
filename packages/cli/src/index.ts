@@ -312,6 +312,7 @@ async function main(): Promise<void> {
           tuiApp,
           args,
         });
+        tuiApp.render();
         return;
       }
 
