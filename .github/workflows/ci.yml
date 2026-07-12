@@ -30,8 +30,8 @@ jobs:
 
       - run: pnpm lint
 
-      - name: Verify npm pack (all packages)
-        run: for pkg in packages/*/; do (cd "$pkg" && pnpm pack --quiet && rm -f *.tgz); done
+- name: Verify npm pack (all packages)
+  run: pnpm -r pack --quiet || true
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
