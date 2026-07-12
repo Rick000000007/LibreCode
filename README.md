@@ -6,6 +6,8 @@ AI coding agent. Works like Claude Code, OpenCode, or Cursor — but open source
 
 [![CI](https://github.com/Rick000000007/LibreCode/actions/workflows/ci.yml/badge.svg)](https://github.com/Rick000000007/LibreCode/actions/workflows/ci.yml)
 
+_CI workflow fixed – builds now pass._
+
 ## Features
 
 - **Zero-configuration** — works out of the box with free models (Gemini, Groq, Ollama, OpenRouter, Together, NVIDIA)
