@@ -214,7 +214,7 @@ export class Doctor {
           });
           continue;
         }
-        if (!entry.apiKey.startsWith('sk-') && !entry.apiKey.startsWith('AIza')) {
+        if (!entry.apiKey.startsWith('sk-') && !entry.apiKey.startsWith('AIza') && !entry.apiKey.startsWith('nvapi-')) {
           checks.push({
             name: `Provider: ${displayName}`,
             status: 'warning',
