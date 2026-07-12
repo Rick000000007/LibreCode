@@ -1,5 +1,19 @@
 # librecode-core
 
+## 0.3.3
+
+### Patch Changes
+
+- feat: add interactive menus and UI spinner
+
+- Updated dependencies []:
+  - librecode-config@0.3.3
+  - librecode-memory@0.3.3
+  - librecode-providers@0.3.3
+  - librecode-tools@0.3.3
+  - librecode-types@0.3.3
+  - librecode-utils@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes

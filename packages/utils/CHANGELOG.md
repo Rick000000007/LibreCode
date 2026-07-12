@@ -1,5 +1,14 @@
 # librecode-utils
 
+## 0.3.3
+
+### Patch Changes
+
+- feat: add interactive menus and UI spinner
+
+- Updated dependencies []:
+  - librecode-types@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes
