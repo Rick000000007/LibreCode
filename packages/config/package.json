@@ -1,6 +1,6 @@
 {
   "name": "librecode-config",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Configuration management for librecode",
   "license": "MIT",
   "publishConfig": {
