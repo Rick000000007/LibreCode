@@ -147,6 +147,9 @@ importers:
       librecode-types:
         specifier: workspace:*
         version: link:../types
+      librecode-utils:
+        specifier: workspace:*
+        version: link:../utils
     devDependencies:
       typescript:
         specifier: ^5.4.5

@@ -1,9 +1,8 @@
 import { BaseProvider, LlmError } from './base.js';
-import type { LLMProvider, ModelInfo } from './base.js';
+import type { LLMProvider, ModelInfo, StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   HealthCheckResult,
 } from 'librecode-types';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
@@ -377,7 +376,11 @@ export class FreeProvider extends BaseProvider {
     );
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     this.ensureInitialized();
     let lastError: LlmError | null = null;
     const { endpointId: initialEndpoint, modelName } = this.resolveModel(request);
@@ -391,12 +394,16 @@ export class FreeProvider extends BaseProvider {
       if (!entry) continue;
 
       try {
-        const result = await entry.provider.streamComplete({
-          ...request,
-          model: modelName,
-        });
+        await entry.provider.streamComplete(
+          {
+            ...request,
+            model: modelName,
+          },
+          onEvent,
+          options
+        );
 
-        return result;
+        return;
       } catch (err) {
         if (err instanceof LlmError) {
           if (err.isRateLimit() || err.isTransient()) {

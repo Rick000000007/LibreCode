@@ -289,7 +289,7 @@ export async function handleProviderTest(
       endpoint: entry?.endpoint,
       defaultModel: entry?.defaultModel ?? meta?.defaultModel,
     });
-    provider = llmProvider as OpenAICompatibleProvider;
+    provider = llmProvider as unknown as OpenAICompatibleProvider;
   } catch (err) {
     output.write(`\x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
     return;
@@ -444,7 +444,7 @@ export async function handleProviderModels(
       apiKey,
       endpoint: baseUrl,
       defaultModel: entry?.defaultModel ?? meta?.defaultModel,
-    }) as OpenAICompatibleProvider;
+    }) as unknown as OpenAICompatibleProvider;
   } catch (err) {
     output.write(`\x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
     return;

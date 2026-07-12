@@ -41,7 +41,8 @@ export class StreamingEngine {
     request: CompletionRequest,
     onEvent: StreamCallback,
   ): Promise<StreamController> {
-    const controller = this.createController();
+    const abortCtrl = new AbortController();
+    const controller = this.createController(abortCtrl);
     this.activeControllers.add(controller);
 
     const previousProvider = this.currentProviderId;
@@ -58,7 +59,7 @@ export class StreamingEngine {
     }
 
     // Run the stream — fire-and-forget so the controller is returned immediately
-    this.runStream(provider, providerId, request, onEvent, controller)
+    this.runStream(provider, providerId, request, onEvent, controller, abortCtrl.signal)
       .catch(() => {})
       .finally(() => {
         this.activeControllers.delete(controller);
@@ -75,36 +76,40 @@ export class StreamingEngine {
     request: CompletionRequest,
     onEvent: StreamCallback,
     controller: StreamController,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       if (provider.supportsStreaming()) {
-        const events = await provider.streamComplete(request);
-        for (const event of events) {
-          if (controller.cancelled) break;
+        await provider.streamComplete(
+          request,
+          async (event) => {
+            if (controller.cancelled) return;
 
-          switch (event.type) {
-            case 'text_delta':
-              onEvent({ type: 'text_delta', delta: event.delta });
-              break;
-            case 'tool_call_delta':
-              onEvent({
-                type: 'tool_call_delta',
-                index: event.index,
-                id: event.id,
-                name: event.name,
-                argumentsDelta: event.argumentsDelta,
-              });
-              break;
-            case 'done':
-              onEvent({ type: 'done', usage: event.usage });
-              break;
-            case 'error':
-              onEvent({ type: 'error', message: event.message });
-              break;
-          }
-        }
+            switch (event.type) {
+              case 'text_delta':
+                onEvent({ type: 'text_delta', delta: event.delta });
+                break;
+              case 'tool_call_delta':
+                onEvent({
+                  type: 'tool_call_delta',
+                  index: event.index,
+                  id: event.id,
+                  name: event.name,
+                  argumentsDelta: event.argumentsDelta,
+                });
+                break;
+              case 'done':
+                onEvent({ type: 'done', usage: event.usage });
+                break;
+              case 'error':
+                onEvent({ type: 'error', message: event.message });
+                break;
+            }
+          },
+          { signal }
+        );
       } else {
-        const response = await provider.complete(request);
+        const response = await provider.complete(request, { signal });
         if (!controller.cancelled) {
           if (response.content) {
             onEvent({ type: 'text_delta', delta: response.content });
@@ -132,40 +137,54 @@ export class StreamingEngine {
     events: UnifiedStreamEvent[];
   }> {
     const events: UnifiedStreamEvent[] = [];
-    const controller = this.createController();
+    const abortCtrl = new AbortController();
+    const controller = this.createController(abortCtrl);
 
     this.setActiveProvider(providerId);
 
     return new Promise((resolve, reject) => {
-      this.runStream(provider, providerId, request, (event) => {
-        events.push(event);
-        if (event.type === 'done') {
-          const content = events
-            .filter((e) => e.type === 'text_delta')
-            .map((e) => e.delta)
-            .join('');
-          resolve({
-            content,
-            usage: event.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-            events,
-          });
-        }
-        if (event.type === 'error') {
-          reject(new Error(event.message));
-        }
-      }, controller);
+      this.runStream(
+        provider,
+        providerId,
+        request,
+        (event) => {
+          events.push(event);
+          if (event.type === 'done') {
+            const content = events
+              .filter((e) => e.type === 'text_delta')
+              .map((e) => e.delta)
+              .join('');
+            resolve({
+              content,
+              usage: event.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+              events,
+            });
+          }
+          if (event.type === 'error') {
+            reject(new Error(event.message));
+          }
+        },
+        controller,
+        abortCtrl.signal
+      );
     });
   }
 
-  private createController(): StreamController & { _completion: Promise<void>; _resolveCompletion: () => void } {
+  private createController(abortCtrl: AbortController): StreamController & { _completion: Promise<void>; _resolveCompletion: () => void } {
     let cancelled = false;
     let resolveCompletion: () => void = () => {};
     const completion = new Promise<void>((resolve) => {
       resolveCompletion = resolve;
     });
     return {
-      cancel(): void { cancelled = true; },
-      abort(): void { cancelled = true; },
+      cancel(): void {
+        cancelled = true;
+        abortCtrl.abort();
+      },
+      abort(): void {
+        cancelled = true;
+        abortCtrl.abort();
+      },
       get cancelled(): boolean { return cancelled; },
       _completion: completion,
       _resolveCompletion: resolveCompletion,

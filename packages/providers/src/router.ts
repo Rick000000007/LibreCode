@@ -1,9 +1,8 @@
 import { BaseProvider, LlmError } from './base.js';
-import type { LLMProvider } from './base.js';
+import type { LLMProvider, StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
 } from 'librecode-types';
 
 interface CooldownEntry {
@@ -63,7 +62,10 @@ export class ModelRouter extends BaseProvider {
     });
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     let lastError: LlmError | null = null;
 
     for (const modelId of this.failoverChain) {
@@ -71,7 +73,7 @@ export class ModelRouter extends BaseProvider {
 
       try {
         const provider = this.resolveProvider(modelId);
-        return await provider.complete({ ...request });
+        return await provider.complete({ ...request }, options);
       } catch (err) {
         if (err instanceof LlmError) {
           if (err.isRateLimit()) {
@@ -91,7 +93,11 @@ export class ModelRouter extends BaseProvider {
     throw lastError ?? LlmError.unavailable('All providers exhausted');
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     let lastError: LlmError | null = null;
 
     for (const modelId of this.failoverChain) {
@@ -99,7 +105,36 @@ export class ModelRouter extends BaseProvider {
 
       try {
         const provider = this.resolveProvider(modelId);
-        return await provider.streamComplete({ ...request });
+        await provider.streamComplete({ ...request }, onEvent, options);
+        return;
+      } catch (err) {
+        if (err instanceof LlmError) {
+          if (err.isRateLimit()) {
+            this.startCooldown(modelId);
+            lastError = err;
+          } else if (err.isTransient()) {
+            lastError = err;
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    throw lastError ?? LlmError.unavailable('All providers exhausted');
+  }
+
+  override async embeddings(text: string, options?: { signal?: AbortSignal }): Promise<number[]> {
+    let lastError: LlmError | null = null;
+
+    for (const modelId of this.failoverChain) {
+      if (this.isCoolingDown(modelId)) continue;
+
+      try {
+        const provider = this.resolveProvider(modelId);
+        return await provider.embeddings(text, options);
       } catch (err) {
         if (err instanceof LlmError) {
           if (err.isRateLimit()) {

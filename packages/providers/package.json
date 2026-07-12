@@ -34,7 +34,8 @@
   },
   "dependencies": {
     "librecode-types": "workspace:*",
-    "librecode-config": "workspace:*"
+    "librecode-config": "workspace:*",
+    "librecode-utils": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

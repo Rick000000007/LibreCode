@@ -197,3 +197,53 @@ export function resolveWorkingDir(cli?: CliOptions): string {
   }
   return process.cwd();
 }
+
+export class ConfigWatcher {
+  private watcher: fs.FSWatcher | null = null;
+  private configPath: string | null = null;
+  private callbacks: ((config: AgentConfig) => void)[] = [];
+  private debounceTimer: NodeJS.Timeout | null = null;
+
+  constructor(configPath?: string) {
+    this.configPath = findConfigPath(configPath);
+  }
+
+  onChange(callback: (config: AgentConfig) => void): void {
+    this.callbacks.push(callback);
+  }
+
+  start(): void {
+    if (!this.configPath || this.watcher) return;
+
+    try {
+      this.watcher = fs.watch(this.configPath, (eventType) => {
+        if (eventType === 'change') {
+          if (this.debounceTimer) clearTimeout(this.debounceTimer);
+          this.debounceTimer = setTimeout(() => {
+            try {
+              const config = loadConfig(this.configPath ? { config: this.configPath } : undefined);
+              for (const cb of this.callbacks) {
+                cb(config);
+              }
+            } catch {
+              // Ignore watch parse errors
+            }
+          }, 100);
+        }
+      });
+    } catch {
+      // Ignore watch initialization errors
+    }
+  }
+
+  stop(): void {
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+  }
+}

@@ -1,9 +1,8 @@
 import { BaseProvider, LlmError } from './base.js';
-import type { LLMProvider } from './base.js';
+import type { LLMProvider, StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   HealthCheckResult,
 } from 'librecode-types';
 
@@ -158,7 +157,10 @@ export class ProviderRouter extends BaseProvider {
     return null;
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     let lastError: LlmError | null = null;
 
     for (const id of this.failoverOrder) {
@@ -168,7 +170,7 @@ export class ProviderRouter extends BaseProvider {
       if (!entry) continue;
 
       try {
-        return await entry.provider.complete({ ...request });
+        return await entry.provider.complete({ ...request }, options);
       } catch (err) {
         if (err instanceof LlmError) {
           if (err.isRateLimit()) {
@@ -189,7 +191,11 @@ export class ProviderRouter extends BaseProvider {
     );
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     let lastError: LlmError | null = null;
 
     for (const id of this.failoverOrder) {
@@ -199,7 +205,8 @@ export class ProviderRouter extends BaseProvider {
       if (!entry) continue;
 
       try {
-        return await entry.provider.streamComplete({ ...request });
+        await entry.provider.streamComplete({ ...request }, onEvent, options);
+        return;
       } catch (err) {
         if (err instanceof LlmError) {
           if (err.isRateLimit()) {
@@ -218,6 +225,18 @@ export class ProviderRouter extends BaseProvider {
     throw lastError ?? LlmError.unavailable(
       'All providers exhausted. Configure a provider with `librecode provider login` or check your API keys.',
     );
+  }
+
+  override async embeddings(text: string, options?: { signal?: AbortSignal }): Promise<number[]> {
+    const id = this.selectProvider();
+    if (!id) {
+      throw LlmError.unavailable('No provider available');
+    }
+    const entry = this.providers.get(id);
+    if (!entry) {
+      throw LlmError.unavailable(`Provider not found: ${id}`);
+    }
+    return await entry.provider.embeddings(text, options);
   }
 }
 

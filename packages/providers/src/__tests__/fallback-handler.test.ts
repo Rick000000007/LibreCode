@@ -21,12 +21,18 @@ function createProvider(name: string, shouldSucceed = true, latencyMs = 10): LLM
         finishReason: 'stop' as const,
       };
     }),
-    streamComplete: vi.fn().mockImplementation(async () => {
+    streamComplete: vi.fn().mockImplementation(async (request, onEvent, opts) => {
       if (!shouldSucceed) throw new LlmError('rate_limited', `${name} rate limited`);
-      return [
+      const events = [
         { type: 'text_delta' as const, delta: `Response from ${name}` },
         { type: 'done' as const, usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 } },
       ];
+      for (const event of events) {
+        if (opts?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+        await onEvent(event);
+      }
     }),
     maxContextWindow: () => 128_000,
     supportsToolCalling: () => true,
@@ -38,6 +44,9 @@ function createProvider(name: string, shouldSucceed = true, latencyMs = 10): LLM
     listModels: async () => [],
     getModel: () => ({ id: `${name}-model`, name: `${name} Model`, provider: name, contextWindow: 128000, supportsToolCalling: true, supportsStreaming: true, isFree: false }),
     setModel: () => {},
+    initialize: async () => {},
+    health: async () => ({ status: 'healthy' }),
+    shutdown: async () => {},
   };
 }
 
@@ -47,13 +56,16 @@ function createFallbackHandler() {
   const router = new AutoRouter(registry, health, { preferFree: false });
   const streaming = new StreamingEngine();
   const conversation = new ConversationStore();
-  const handler = new FallbackHandler(health, registry, router, streaming, conversation, {
+  const factory = {
+    create: vi.fn().mockImplementation((name) => createProvider(name)),
+  } as any;
+  const handler = new FallbackHandler(health, registry, router, streaming, conversation, factory, {
     maxRetries: 2,
     maxProviderSwitches: 1,
     baseDelayMs: 10,
     maxDelayMs: 100,
   });
-  return { registry, health, router, streaming, conversation, handler };
+  return { registry, health, router, streaming, conversation, factory, handler };
 }
 
 describe('FallbackHandler', () => {

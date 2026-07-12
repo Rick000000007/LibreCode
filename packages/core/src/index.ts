@@ -1,7 +1,6 @@
 import type {
   AgentConfig,
   Message,
-  StreamEvent,
   AgentEvent,
   TokenUsage,
 } from 'librecode-types';
@@ -97,9 +96,40 @@ export class Agent {
         stream: true,
       };
 
-      let events: StreamEvent[];
+      let content = '';
+      const toolCallsByIndex: Map<
+        number,
+        { id?: string; name?: string; arguments: string }
+      > = new Map();
+      let usage = createTokenUsage();
+
       try {
-        events = await this.provider.streamComplete(request);
+        await this.provider.streamComplete(request, async (event) => {
+          switch (event.type) {
+            case 'text_delta':
+              content += event.delta;
+              onEvent({ type: 'text_delta', delta: event.delta });
+              break;
+            case 'tool_call_delta': {
+              const idx = event.index;
+              const existing = toolCallsByIndex.get(idx) ?? {
+                id: undefined,
+                name: undefined,
+                arguments: '',
+              };
+              if (event.id) existing.id = event.id;
+              if (event.name) existing.name = event.name;
+              existing.arguments += event.argumentsDelta;
+              toolCallsByIndex.set(idx, existing);
+              break;
+            }
+            case 'done':
+              usage = event.usage;
+              break;
+            case 'error':
+              throw new Error(`Stream error: ${event.message}`);
+          }
+        });
       } catch (err: unknown) {
         if (
           err instanceof Error &&
@@ -109,40 +139,6 @@ export class Agent {
           continue;
         }
         throw err;
-      }
-
-      let content = '';
-      const toolCallsByIndex: Map<
-        number,
-        { id?: string; name?: string; arguments: string }
-      > = new Map();
-      let usage = createTokenUsage();
-
-      for (const event of events) {
-        switch (event.type) {
-          case 'text_delta':
-            content += event.delta;
-            onEvent({ type: 'text_delta', delta: event.delta });
-            break;
-          case 'tool_call_delta': {
-            const idx = event.index;
-            const existing = toolCallsByIndex.get(idx) ?? {
-              id: undefined,
-              name: undefined,
-              arguments: '',
-            };
-            if (event.id) existing.id = event.id;
-            if (event.name) existing.name = event.name;
-            existing.arguments += event.argumentsDelta;
-            toolCallsByIndex.set(idx, existing);
-            break;
-          }
-          case 'done':
-            usage = event.usage;
-            break;
-          case 'error':
-            throw new Error(`Stream error: ${event.message}`);
-        }
       }
 
       this.totalTokensUsed = {

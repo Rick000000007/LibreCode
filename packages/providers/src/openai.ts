@@ -1,9 +1,8 @@
 /* eslint-disable no-constant-condition */
-import { BaseProvider, LlmError } from './base.js';
+import { BaseProvider, LlmError, type StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   TokenUsage,
   ToolCall,
   Message,
@@ -126,7 +125,10 @@ export class OpenAIProvider extends BaseProvider {
     }
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     const apiKey = this.apiKey;
     if (!apiKey) {
       throw LlmError.authError('OpenAI API key not set');
@@ -149,6 +151,7 @@ export class OpenAIProvider extends BaseProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
 
     const text = await response.text();
@@ -181,7 +184,11 @@ export class OpenAIProvider extends BaseProvider {
     };
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     const apiKey = this.apiKey;
     if (!apiKey) {
       throw LlmError.authError('OpenAI API key not set');
@@ -204,6 +211,7 @@ export class OpenAIProvider extends BaseProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
 
     if (!response.ok) {
@@ -211,7 +219,6 @@ export class OpenAIProvider extends BaseProvider {
       throw this.handleError(response.status, text);
     }
 
-    const events: StreamEvent[] = [];
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     if (!response.body) {
@@ -225,6 +232,10 @@ export class OpenAIProvider extends BaseProvider {
     try {
       let streamDone = false;
       while (true) {
+        if (options?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+
         const { done, value } = await reader.read();
         if (done) {
           if (streamDone) break;
@@ -264,12 +275,12 @@ export class OpenAIProvider extends BaseProvider {
             const choice = chunk.choices[0];
             if (choice) {
               if (choice.delta.content) {
-                events.push({ type: 'text_delta', delta: choice.delta.content });
+                onEvent({ type: 'text_delta', delta: choice.delta.content });
               }
 
               if (choice.delta.tool_calls) {
                 for (const tc of choice.delta.tool_calls) {
-                  events.push({
+                  onEvent({
                     type: 'tool_call_delta',
                     index: tc.index,
                     id: tc.id,
@@ -290,8 +301,7 @@ export class OpenAIProvider extends BaseProvider {
       reader.releaseLock();
     }
 
-    events.push({ type: 'done', usage });
-    return events;
+    onEvent({ type: 'done', usage });
   }
 
   private parseFinishReason(reason?: string): string {

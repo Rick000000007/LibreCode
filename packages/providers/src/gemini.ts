@@ -1,9 +1,8 @@
 /* eslint-disable no-constant-condition */
-import { BaseProvider, LlmError, createUsage } from './base.js';
+import { BaseProvider, LlmError, createUsage, type StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   ToolCall,
 } from 'librecode-types';
 
@@ -15,7 +14,7 @@ interface ProviderOptions {
 
 interface GeminiContent {
   role: string;
-  parts: Array<{ text?: string; functionCall?: Record<string, unknown>; functionResponse?: Record<string, unknown> }>;
+  parts: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> }; functionResponse?: Record<string, unknown> }>;
 }
 
 interface GeminiCandidate {
@@ -55,19 +54,32 @@ function convertMessages(
           parts.push({
             functionCall: {
               name: tc.function.name,
-              args: tc.function.arguments,
-            } as unknown as Record<string, unknown>,
+              args: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
+            },
           });
         }
       }
       contents.push({ role: 'model', parts });
     } else if (msg.role === 'tool') {
+      let functionName = 'unknown';
+      if (msg.tool_call_id) {
+        for (let i = request.messages.indexOf(msg) - 1; i >= 0; i--) {
+          const prevMsg = request.messages[i];
+          if (prevMsg && prevMsg.role === 'assistant' && prevMsg.tool_calls) {
+            const matchedCall = prevMsg.tool_calls.find((tc: ToolCall) => tc.id === msg.tool_call_id);
+            if (matchedCall) {
+              functionName = matchedCall.function.name;
+              break;
+            }
+          }
+        }
+      }
       contents.push({
         role: 'user',
         parts: [
           {
             functionResponse: {
-              name: '',
+              name: functionName,
               response: { content: msg.content },
             } as unknown as Record<string, unknown>,
           },
@@ -118,7 +130,10 @@ export class GeminiProvider extends BaseProvider {
     return true;
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     if (!this.apiKey) {
       throw LlmError.authError('Gemini API key not set');
     }
@@ -143,6 +158,7 @@ export class GeminiProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(bodyJson),
+      signal: options?.signal,
     });
 
     const text = await response.text();
@@ -160,6 +176,15 @@ export class GeminiProvider extends BaseProvider {
       for (const part of candidate.content.parts) {
         if (part.text) {
           contentText += part.text;
+        } else if (part.functionCall) {
+          toolCalls.push({
+            id: `call_${Math.random().toString(36).slice(2, 11)}`,
+            type: 'function',
+            function: {
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args ?? {}),
+            },
+          });
         }
       }
     }
@@ -180,7 +205,11 @@ export class GeminiProvider extends BaseProvider {
     };
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     if (!this.apiKey) {
       throw LlmError.authError('Gemini API key not set');
     }
@@ -205,14 +234,13 @@ export class GeminiProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(bodyJson),
+      signal: options?.signal,
     });
 
     if (!response.ok) {
       const text = await response.text();
       throw LlmError.apiError(`Gemini API error (${response.status}): ${text}`, response.status);
     }
-
-    const events: StreamEvent[] = [];
 
     if (!response.body) {
       throw LlmError.networkError('No response body');
@@ -224,6 +252,10 @@ export class GeminiProvider extends BaseProvider {
 
     try {
       while (true) {
+        if (options?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -246,9 +278,21 @@ export class GeminiProvider extends BaseProvider {
           try {
             const chunk = JSON.parse(data) as GeminiResponse;
             const candidate = chunk.candidates?.[0];
-            const part = candidate?.content?.parts?.[0];
-            if (part?.text) {
-              events.push({ type: 'text_delta', delta: part.text });
+            if (candidate?.content?.parts) {
+              for (const part of candidate.content.parts) {
+                if (part.text) {
+                  onEvent({ type: 'text_delta', delta: part.text });
+                }
+                if (part.functionCall) {
+                  onEvent({
+                    type: 'tool_call_delta',
+                    index: 0,
+                    id: `call_${Math.random().toString(36).slice(2, 11)}`,
+                    name: part.functionCall.name,
+                    argumentsDelta: JSON.stringify(part.functionCall.args ?? {}),
+                  });
+                }
+              }
             }
           } catch {
             // skip
@@ -259,8 +303,7 @@ export class GeminiProvider extends BaseProvider {
       reader.releaseLock();
     }
 
-    events.push({ type: 'done', usage: createUsage({}) });
-    return events;
+    onEvent({ type: 'done', usage: createUsage({}) });
   }
 
   private parseFinishReason(reason?: string): string {

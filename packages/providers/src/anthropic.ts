@@ -1,9 +1,8 @@
 /* eslint-disable no-constant-condition */
-import { BaseProvider, LlmError, createUsage } from './base.js';
+import { BaseProvider, LlmError, createUsage, type StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   ToolCall,
   Message,
 } from 'librecode-types';
@@ -15,115 +14,70 @@ interface ProviderOptions {
 }
 
 interface AnthropicContentBlock {
-  type: string;
+  type: 'text' | 'tool_use';
   text?: string;
   id?: string;
   name?: string;
   input?: Record<string, unknown>;
-  tool_use_id?: string;
-}
-
-interface AnthropicUsage {
-  input_tokens: number;
-  output_tokens: number;
 }
 
 interface AnthropicResponse {
   content: AnthropicContentBlock[];
-  stop_reason?: string;
-  usage?: AnthropicUsage;
-}
-
-interface AnthropicStreamEvent {
-  type: string;
-  delta?: {
-    text?: string;
-    partial_json?: string;
-    stop_reason?: string;
-  };
-  content_block?: {
-    type: string;
-    id?: string;
-    name?: string;
-  };
-  index?: number;
+  stop_reason: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;
   };
 }
 
-function convertMessages(
-  messages: Message[],
-): { system?: string; converted: unknown[] } {
+interface AnthropicStreamEvent {
+  type: 'content_block_delta' | 'content_block_start' | 'message_delta';
+  index?: number;
+  delta?: {
+    text?: string;
+    partial_json?: string;
+  };
+  content_block?: {
+    id: string;
+    name: string;
+    type: 'tool_use' | 'text';
+  };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
+function convertMessages(messages: Message[]): {
+  system?: string;
+  converted: { role: 'user' | 'assistant'; content: string }[];
+} {
   let system: string | undefined;
-  const converted: unknown[] = [];
+  const converted: { role: 'user' | 'assistant'; content: string }[] = [];
 
   for (const m of messages) {
-    switch (m.role) {
-      case 'system':
-        system = m.content ?? undefined;
-        break;
-      case 'user':
-        converted.push({ role: 'user', content: m.content ?? '' });
-        break;
-      case 'assistant': {
-        const blocks: AnthropicContentBlock[] = [];
-        if (m.content) {
-          blocks.push({ type: 'text', text: m.content });
-        }
-        if (m.tool_calls) {
-          for (const tc of m.tool_calls) {
-            let input: Record<string, unknown> = {};
-            try {
-              input = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-            } catch {
-              // use empty object
-            }
-            blocks.push({
-              type: 'tool_use',
-              id: tc.id,
-              name: tc.function.name,
-              input,
-            });
-          }
-        }
-        converted.push({
-          role: 'assistant',
-          content:
-            blocks.length === 0
-              ? (m.content ?? '')
-              : blocks.length === 1 && blocks[0]!.type === 'text'
-                ? blocks[0]!.text ?? ''
-                : blocks,
-        });
-        break;
-      }
-      case 'tool':
-        converted.push({
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: m.tool_call_id,
-              content: m.content,
-            },
-          ],
-        });
-        break;
+    if (m.role === 'system') {
+      system = m.content ?? '';
+    } else if (m.role === 'user' || m.role === 'assistant') {
+      converted.push({
+        role: m.role,
+        content: m.content ?? '',
+      });
     }
   }
 
   return { system, converted };
 }
 
-function convertTools(
-  tools: CompletionRequest['tools'],
-): Array<{ name: string; description: string; input_schema: Record<string, unknown> }> {
+function convertTools(tools: any[]): Record<string, unknown>[] {
   return tools.map((t) => ({
     name: t.function.name,
-    description: t.function.description,
-    input_schema: t.function.parameters as Record<string, unknown>,
+    description: t.function.description ?? '',
+    input_schema: {
+      type: 'object',
+      properties: t.function.parameters.properties ?? {},
+      required: t.function.parameters.required ?? [],
+    },
   }));
 }
 
@@ -136,7 +90,7 @@ export class AnthropicProvider extends BaseProvider {
     super();
     this.apiKey = options.apiKey ?? '';
     this.baseUrl = options.baseUrl ?? 'https://api.anthropic.com';
-    this.defaultModel = options.defaultModel ?? 'claude-sonnet-4-20250514';
+    this.defaultModel = options.defaultModel ?? 'claude-3-opus-20240229';
   }
 
   override name(): string {
@@ -168,7 +122,10 @@ export class AnthropicProvider extends BaseProvider {
     }
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     const apiKey = this.apiKey;
     if (!apiKey) {
       throw LlmError.authError('Anthropic API key not set');
@@ -201,6 +158,7 @@ export class AnthropicProvider extends BaseProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(bodyJson),
+      signal: options?.signal,
     });
 
     const text = await response.text();
@@ -245,7 +203,11 @@ export class AnthropicProvider extends BaseProvider {
     };
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     const apiKey = this.apiKey;
     if (!apiKey) {
       throw LlmError.authError('Anthropic API key not set');
@@ -278,6 +240,7 @@ export class AnthropicProvider extends BaseProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(bodyJson),
+      signal: options?.signal,
     });
 
     if (!response.ok) {
@@ -285,7 +248,6 @@ export class AnthropicProvider extends BaseProvider {
       throw this.handleError(response.status, text);
     }
 
-    const events: StreamEvent[] = [];
     let usage = createUsage({});
 
     if (!response.body) {
@@ -298,6 +260,10 @@ export class AnthropicProvider extends BaseProvider {
 
     try {
       while (true) {
+        if (options?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -323,10 +289,10 @@ export class AnthropicProvider extends BaseProvider {
             switch (event.type) {
               case 'content_block_delta':
                 if (event.delta?.text) {
-                  events.push({ type: 'text_delta', delta: event.delta.text });
+                  onEvent({ type: 'text_delta', delta: event.delta.text });
                 }
                 if (event.delta?.partial_json) {
-                  events.push({
+                  onEvent({
                     type: 'tool_call_delta',
                     index: event.index ?? 0,
                     argumentsDelta: event.delta.partial_json,
@@ -338,7 +304,7 @@ export class AnthropicProvider extends BaseProvider {
                   event.content_block &&
                   event.content_block.type === 'tool_use'
                 ) {
-                  events.push({
+                  onEvent({
                     type: 'tool_call_delta',
                     index: event.index ?? 0,
                     id: event.content_block.id,
@@ -367,8 +333,7 @@ export class AnthropicProvider extends BaseProvider {
       reader.releaseLock();
     }
 
-    events.push({ type: 'done', usage });
-    return events;
+    onEvent({ type: 'done', usage });
   }
 
   private parseFinishReason(reason?: string): string {

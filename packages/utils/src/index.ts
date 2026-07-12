@@ -148,3 +148,6 @@ export function joinPaths(...parts: string[]): string {
 export function getEnvVar(name: string): string | undefined {
   return process.env[name];
 }
+
+export * from './foundation.js';
+

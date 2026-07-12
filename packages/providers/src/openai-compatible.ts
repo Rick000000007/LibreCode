@@ -1,12 +1,11 @@
 import { BaseProvider, LlmError } from './base.js';
-import type { ModelInfo } from './base.js';
+import type { ModelInfo, StreamCallback } from './base.js';
 import { HttpClient } from './http-client.js';
 import { detectCapabilities } from './capabilities.js';
 import { classifyError } from './error-classifier.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   TokenUsage,
   ProviderCapabilities,
 } from 'librecode-types';
@@ -309,7 +308,11 @@ export class OpenAICompatibleProvider extends BaseProvider {
     };
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     const apiKey = this.httpClient.getApiKey();
     if (!apiKey && !this.providerName.includes('ollama')) {
       const envKey = this.providerName.toUpperCase() + '_API_KEY';
@@ -334,81 +337,112 @@ export class OpenAICompatibleProvider extends BaseProvider {
       body['tools'] = request.tools;
     }
 
-    const result = await this.httpClient.request('POST', '/chat/completions', body);
+    const result = await this.httpClient.request('POST', '/chat/completions', body, true, options);
 
     if (result.status !== 200) {
       throw this.handleError(result.status, result.body as string);
     }
 
-    const events: StreamEvent[] = [];
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let hasAnyEvent = false;
 
     const responseBody = result.body;
-    const lines = (responseBody as string).split('\n');
-    let hasContent = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith(':')) continue;
-
-      const dataPrefix = 'data: ';
-      if (!trimmed.startsWith(dataPrefix)) continue;
-
-      const data = trimmed.slice(dataPrefix.length).trim();
-      if (data === '[DONE]') break;
-
-      try {
-        const chunk = JSON.parse(data) as OpenAiStreamChunk;
-
-        if ('error' in chunk) {
-          const errChunk = chunk as unknown as { error: { message?: string; type?: string; code?: string } };
-          throw LlmError.apiError(
-            `${this.providerName}: streaming error - ${errChunk.error?.message ?? JSON.stringify(errChunk.error)}`,
-          );
-        }
-
-        if (chunk.usage) {
-          usage = {
-            promptTokens: chunk.usage.prompt_tokens,
-            completionTokens: chunk.usage.completion_tokens,
-            totalTokens: chunk.usage.total_tokens,
-          };
-        }
-
-        const choice = chunk.choices?.[0];
-        if (choice) {
-          if (choice.delta.content) {
-            hasContent = true;
-            events.push({ type: 'text_delta', delta: choice.delta.content });
-          }
-
-          if (choice.delta.tool_calls) {
-            for (const tc of choice.delta.tool_calls) {
-              events.push({
-                type: 'tool_call_delta',
-                index: tc.index,
-                id: tc.id,
-                name: tc.function?.name,
-                argumentsDelta: tc.function?.arguments ?? '',
-              });
-            }
-          }
-
-          if (choice.finish_reason === 'content_filter') {
-            events.push({ type: 'error', message: 'Content filtered by provider safety system.' });
-          }
-        }
-      } catch (err) {
-        if (err instanceof LlmError) throw err;
-      }
+    if (!responseBody) {
+      throw LlmError.networkError('No response body');
     }
 
-    if (!hasContent && events.length === 0) {
+    const reader = (responseBody as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      let streamDone = false;
+      while (!streamDone) {
+        if (options?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+
+        const { done, value } = await reader.read();
+        if (done) {
+          streamDone = true;
+        }
+
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+        }
+
+        while (buffer.includes('\n')) {
+          const newlinePos = buffer.indexOf('\n');
+          const line = buffer.slice(0, newlinePos).trim();
+          buffer = buffer.slice(newlinePos + 1);
+
+          if (!line || line.startsWith(':')) continue;
+
+          const dataPrefix = 'data: ';
+          if (!line.startsWith(dataPrefix)) continue;
+
+          const data = line.slice(dataPrefix.length).trim();
+          if (data === '[DONE]') {
+            streamDone = true;
+            break;
+          }
+
+          try {
+            const chunk = JSON.parse(data) as OpenAiStreamChunk;
+
+            if ('error' in chunk) {
+              const errChunk = chunk as unknown as { error: { message?: string; type?: string; code?: string } };
+              throw LlmError.apiError(
+                `${this.providerName}: streaming error - ${errChunk.error?.message ?? JSON.stringify(errChunk.error)}`,
+              );
+            }
+
+            if (chunk.usage) {
+              usage = {
+                promptTokens: chunk.usage.prompt_tokens,
+                completionTokens: chunk.usage.completion_tokens,
+                totalTokens: chunk.usage.total_tokens,
+              };
+            }
+
+            const choice = chunk.choices?.[0];
+            if (choice) {
+              if (choice.delta.content) {
+                hasAnyEvent = true;
+                onEvent({ type: 'text_delta', delta: choice.delta.content });
+              }
+
+              if (choice.delta.tool_calls) {
+                hasAnyEvent = true;
+                for (const tc of choice.delta.tool_calls) {
+                  onEvent({
+                    type: 'tool_call_delta',
+                    index: tc.index,
+                    id: tc.id,
+                    name: tc.function?.name,
+                    argumentsDelta: tc.function?.arguments ?? '',
+                  });
+                }
+              }
+
+              if (choice.finish_reason === 'content_filter') {
+                onEvent({ type: 'error', message: 'Content filtered by provider safety system.' });
+              }
+            }
+          } catch (err) {
+            if (err instanceof LlmError) throw err;
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!hasAnyEvent) {
       throw LlmError.apiError(`${this.providerName}: Empty streaming response received`);
     }
 
-    events.push({ type: 'done', usage });
-    return events;
+    onEvent({ type: 'done', usage });
   }
 
   private parseFinishReason(reason?: string): string {

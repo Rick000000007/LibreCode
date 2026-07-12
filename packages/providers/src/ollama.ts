@@ -1,9 +1,8 @@
 /* eslint-disable no-constant-condition */
-import { BaseProvider, LlmError, createUsage } from './base.js';
+import { BaseProvider, LlmError, createUsage, type StreamCallback } from './base.js';
 import type {
   CompletionRequest,
   CompletionResponse,
-  StreamEvent,
   Message,
 } from 'librecode-types';
 
@@ -52,7 +51,14 @@ export class OllamaProvider extends BaseProvider {
     return 32_768;
   }
 
-  override async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  override supportsStreaming(): boolean {
+    return true;
+  }
+
+  override async complete(
+    request: CompletionRequest,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<CompletionResponse> {
     const body = {
       model: request.model,
       messages: convertMessages(request.messages),
@@ -65,6 +71,7 @@ export class OllamaProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
 
     const text = await response.text();
@@ -98,7 +105,11 @@ export class OllamaProvider extends BaseProvider {
     };
   }
 
-  override async streamComplete(request: CompletionRequest): Promise<StreamEvent[]> {
+  override async streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void> {
     const body = {
       model: request.model,
       messages: convertMessages(request.messages),
@@ -111,6 +122,7 @@ export class OllamaProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
 
     if (!response.ok) {
@@ -123,7 +135,6 @@ export class OllamaProvider extends BaseProvider {
       }
     }
 
-    const events: StreamEvent[] = [];
     let usage = createUsage({});
 
     if (!response.body) {
@@ -136,6 +147,10 @@ export class OllamaProvider extends BaseProvider {
 
     try {
       while (true) {
+        if (options?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -152,7 +167,7 @@ export class OllamaProvider extends BaseProvider {
           try {
             const chunk = JSON.parse(line) as OllamaResponse;
             if (chunk.message?.content) {
-              events.push({ type: 'text_delta', delta: chunk.message.content });
+              onEvent({ type: 'text_delta', delta: chunk.message.content });
             }
             if (chunk.done) {
               const promptTokens = chunk.prompt_eval_count ?? 0;
@@ -172,7 +187,6 @@ export class OllamaProvider extends BaseProvider {
       reader.releaseLock();
     }
 
-    events.push({ type: 'done', usage });
-    return events;
+    onEvent({ type: 'done', usage });
   }
 }

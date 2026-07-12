@@ -13,13 +13,19 @@ function createMockProvider(options?: { streamEvents?: any[], shouldFail?: boole
         finishReason: 'stop' as const,
       };
     }),
-    streamComplete: vi.fn().mockImplementation(async () => {
+    streamComplete: vi.fn().mockImplementation(async (request, onEvent, opts) => {
       if (options?.shouldFail) throw new Error('Stream failed');
-      return options?.streamEvents ?? [
+      const events = options?.streamEvents ?? [
         { type: 'text_delta' as const, delta: 'Hello' },
         { type: 'text_delta' as const, delta: ' world' },
         { type: 'done' as const, usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 } },
       ];
+      for (const event of events) {
+        if (opts?.signal?.aborted) {
+          throw new Error('Streaming aborted');
+        }
+        await onEvent(event);
+      }
     }),
     maxContextWindow: () => 8192,
     supportsToolCalling: () => true,

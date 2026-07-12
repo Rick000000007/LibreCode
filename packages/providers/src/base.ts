@@ -19,15 +19,21 @@ export interface ModelInfo {
   category?: 'fast' | 'reasoning' | 'balanced' | 'small' | 'code';
 }
 
+export type StreamCallback = (event: StreamEvent) => void | Promise<void>;
+
 export interface LLMProvider {
-  complete(request: CompletionRequest): Promise<CompletionResponse>;
-  streamComplete(request: CompletionRequest): Promise<StreamEvent[]>;
+  complete(request: CompletionRequest, options?: { signal?: AbortSignal; timeout?: number }): Promise<CompletionResponse>;
+  streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void>;
   name(): string;
   maxContextWindow(): number;
   supportsToolCalling(): boolean;
   supportsStreaming(): boolean;
   /** List available models for this provider */
-  listModels(): Promise<ModelInfo[]>;
+  listModels(options?: { signal?: AbortSignal; timeout?: number }): Promise<ModelInfo[]>;
   /** Whether this provider supports vision/image inputs */
   supportsVision(): boolean;
   /** Whether this provider supports extended reasoning/thinking */
@@ -40,15 +46,41 @@ export interface LLMProvider {
   getModel(): ModelInfo;
   /** Switch to a specific model */
   setModel(modelId: string): void;
+
+  // Lifecycle methods
+  initialize(options?: { signal?: AbortSignal }): Promise<void>;
+  health(options?: { signal?: AbortSignal }): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }>;
+  shutdown(): Promise<void>;
+  embeddings(text: string, options?: { signal?: AbortSignal }): Promise<number[]>;
 }
 
 export abstract class BaseProvider implements LLMProvider {
-  abstract complete(request: CompletionRequest): Promise<CompletionResponse>;
-  abstract streamComplete(request: CompletionRequest): Promise<StreamEvent[]>;
+  abstract complete(request: CompletionRequest, options?: { signal?: AbortSignal; timeout?: number }): Promise<CompletionResponse>;
+  abstract streamComplete(
+    request: CompletionRequest,
+    onEvent: StreamCallback,
+    options?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<void>;
   abstract name(): string;
   abstract maxContextWindow(): number;
 
   private _model: string = '';
+
+  async initialize(options?: { signal?: AbortSignal }): Promise<void> {
+    // Default no-op
+  }
+
+  async health(options?: { signal?: AbortSignal }): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }> {
+    return { status: 'healthy' };
+  }
+
+  async shutdown(): Promise<void> {
+    // Default no-op
+  }
+
+  async embeddings(text: string, options?: { signal?: AbortSignal }): Promise<number[]> {
+    throw new Error(`Embeddings not supported by provider: ${this.name()}`);
+  }
 
   supportsToolCalling(): boolean {
     return true;
@@ -74,7 +106,7 @@ export abstract class BaseProvider implements LLMProvider {
     return false;
   }
 
-  async listModels(): Promise<ModelInfo[]> {
+  async listModels(options?: { signal?: AbortSignal; timeout?: number }): Promise<ModelInfo[]> {
     return [this.getModel()];
   }
 

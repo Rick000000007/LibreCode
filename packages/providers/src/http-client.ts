@@ -1,6 +1,7 @@
 import * as dns from 'node:dns';
 import { type ConnectionDiagnostics } from 'librecode-types';
 import { classifyError } from './error-classifier.js';
+import { LibreError, MetricsCollector, Logger } from 'librecode-utils';
 
 export interface HttpClientOptions {
   baseUrl: string;
@@ -8,7 +9,9 @@ export interface HttpClientOptions {
   organization?: string;
   project?: string;
   customHeaders?: Record<string, string>;
-  timeout?: number;
+  timeout?: number; // Request read/write timeout
+  connectTimeout?: number; // Connection establishment timeout
+  dnsTimeout?: number; // DNS resolution timeout
   maxRetries?: number;
   retryDelay?: number;
   proxyUrl?: string;
@@ -36,8 +39,11 @@ const DEFAULT_RETRY: RetryPolicy = {
 };
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
-
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+
+// Global metrics collector for HTTP layer
+export const httpMetrics = new MetricsCollector();
+const logger = new Logger('HttpClient');
 
 function isIdempotentMethod(method: string): boolean {
   return IDEMPOTENT_METHODS.has(method.toUpperCase());
@@ -78,16 +84,23 @@ function getPort(baseUrl: string): number {
   }
 }
 
-async function dnsLookup(hostname: string, preferIpv4: boolean): Promise<ConnectionDiagnostics> {
+async function dnsLookupWithTimeout(
+  hostname: string,
+  preferIpv4: boolean,
+  timeoutMs: number
+): Promise<ConnectionDiagnostics> {
   const diag: ConnectionDiagnostics = {};
+  const dnsPromise = preferIpv4
+    ? dns.promises.resolve4(hostname)
+    : dns.promises.resolve(hostname);
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('DNS resolution timed out')), timeoutMs);
+  });
+
   try {
-    if (preferIpv4) {
-      const addresses = await dns.promises.resolve4(hostname);
-      diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
-    } else {
-      const addresses = await dns.promises.resolve(hostname);
-      diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
-    }
+    const addresses = await Promise.race([dnsPromise, timeoutPromise]);
+    diag.dnsLookup = `${hostname} -> ${addresses.join(', ')}`;
   } catch (err) {
     diag.dnsLookup = `${hostname} -> DNS failed: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -107,6 +120,8 @@ export class HttpClient {
   constructor(options: HttpClientOptions) {
     this.options = {
       timeout: 30000,
+      connectTimeout: 10000,
+      dnsTimeout: 5000,
       maxRetries: 3,
       retryDelay: 1000,
       allowRetryOnNonIdempotent: false,
@@ -123,7 +138,23 @@ export class HttpClient {
     return this.options;
   }
 
-  async request(method: string, path: string, body?: unknown, stream?: boolean): Promise<HttpResponse> {
+  async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    stream?: boolean,
+    requestOptions?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<HttpResponse> {
+    // 1. Immediate Abort Check
+    if (requestOptions?.signal?.aborted) {
+      throw new LibreError(
+        'REQUEST_CANCELLED',
+        'network',
+        'Request was cancelled via AbortSignal before sending',
+        'Retry the operation if needed.'
+      );
+    }
+
     const url = new URL(path, this.baseUrl);
     const hostname = url.hostname;
     const diag: ConnectionDiagnostics = {};
@@ -135,8 +166,18 @@ export class HttpClient {
     };
 
     let lastError: Error | null = null;
+    const startTime = Date.now();
 
     for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
+      if (requestOptions?.signal?.aborted) {
+        throw new LibreError(
+          'REQUEST_CANCELLED',
+          'network',
+          'Request cancelled during retry delay',
+          'Try again later.'
+        );
+      }
+
       try {
         if (attempt > 0) {
           const delay = Math.min(
@@ -146,12 +187,25 @@ export class HttpClient {
           await sleep(delay);
         }
 
+        // Separate DNS Timeout
         if (attempt === 0) {
-          const dnsDiag = await dnsLookup(hostname, this.options.preferIpv4 ?? false);
+          const dnsDiag = await dnsLookupWithTimeout(
+            hostname,
+            this.options.preferIpv4 ?? false,
+            this.options.dnsTimeout ?? 5000
+          );
           Object.assign(diag, dnsDiag);
         }
 
-        const result = await this.doFetch(method, url, diag, body, stream);
+        const result = await this.doFetch(method, url, diag, body, stream, requestOptions);
+
+        const duration = Date.now() - startTime;
+        httpMetrics.record('http_request_duration', duration, {
+          method,
+          host: hostname,
+          status: String(result.status),
+          attempt: String(attempt),
+        });
 
         if (result.status >= 200 && result.status < 300) {
           result.diagnostics = diag;
@@ -169,14 +223,32 @@ export class HttpClient {
           }
           const errorMsg = classifyError(result.status, result.body as string);
           lastError = new Error(errorMsg);
-          (lastError as Error & { statusCode?: number }).statusCode = result.status;
+          (lastError as any).statusCode = result.status;
           throw lastError;
         }
 
         result.diagnostics = diag;
         return result;
       } catch (err) {
+        const duration = Date.now() - startTime;
+        httpMetrics.record('http_request_error', duration, {
+          method,
+          host: hostname,
+          error: err instanceof Error ? err.name : 'UnknownError',
+          attempt: String(attempt),
+        });
+
         if (err instanceof Error) {
+          if (err.name === 'AbortError') {
+            throw new LibreError(
+              'REQUEST_CANCELLED',
+              'network',
+              'Request timed out or aborted.',
+              'Check network load or raise timeout options.',
+              err.message,
+              err
+            );
+          }
           if (
             isRetryableError(err) &&
             (isIdempotentMethod(method) || (this.options.allowRetryOnNonIdempotent ?? false)) &&
@@ -194,7 +266,7 @@ export class HttpClient {
     throw this.enhanceError(
       lastError ?? new Error(`Request failed after ${retryPolicy.maxRetries} retries`),
       url.toString(),
-      diag,
+      diag
     );
   }
 
@@ -204,10 +276,11 @@ export class HttpClient {
     diag: ConnectionDiagnostics,
     body?: unknown,
     stream?: boolean,
+    requestOptions?: { signal?: AbortSignal; timeout?: number }
   ): Promise<HttpResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'librecode/0.2.1',
+      'User-Agent': 'librecode/0.2.3',
       ...this.options.customHeaders,
     };
 
@@ -222,7 +295,20 @@ export class HttpClient {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.options.timeout ?? 30000);
+    const timeoutMs = requestOptions?.timeout ?? this.options.timeout ?? 30000;
+    const timeoutId = setTimeout(() => {
+      logger.warn(`Request to ${url} timed out after ${timeoutMs}ms`);
+      controller.abort();
+    }, timeoutMs);
+
+    // Propagate AbortSignal
+    let abortHandler: (() => void) | null = null;
+    if (requestOptions?.signal) {
+      abortHandler = () => {
+        controller.abort();
+      };
+      requestOptions.signal.addEventListener('abort', abortHandler);
+    }
 
     const fetchOptions: RequestInit = {
       method,
@@ -263,128 +349,54 @@ export class HttpClient {
         body: text,
         diagnostics: diag,
       };
-    } catch (err) {
-if (err instanceof Error && err.name === 'AbortError') {
-          // Propagate the abort error directly; the caller will handle timeout messaging
-          throw err;
-        }
-      throw err;
     } finally {
       clearTimeout(timeoutId);
+      if (requestOptions?.signal && abortHandler) {
+        requestOptions.signal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 
-  private enhanceError(err: Error, url: string, diag: ConnectionDiagnostics): Error {
-    // Preserve abort errors (e.g., request timeout) without overriding message
-    if ((err as any).name === 'AbortError') {
-      return err;
-    }
+  private enhanceError(err: Error, url: string, diag: ConnectionDiagnostics): LibreError {
     const msg = err.message;
-    const enhanced = new Error(msg);
-    (enhanced as any).cause = err;
-    if ('statusCode' in err) {
-      (enhanced as any).statusCode = (err as any).statusCode;
-    }
+    let code = 'HTTP_REQUEST_FAILED';
+    let suggestion = 'Check request options or service endpoint status.';
 
     if (msg.includes('ENOTFOUND') || diag.dnsLookup?.includes('DNS failed')) {
-      const hostname = getHostname(url);
-      const dnsErr = new Error(
-        `DNS lookup failed for ${hostname}. Check the base URL and your internet connection.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      dnsErr.cause = err;
-      if ('statusCode' in err) (dnsErr as any).statusCode = (err as any).statusCode;
-      return dnsErr;
+      code = 'DNS_LOOKUP_FAILED';
+      suggestion = 'DNS resolution failed. Verify your network connection and base URL.';
+    } else if (msg.includes('ECONNREFUSED')) {
+      code = 'CONNECTION_REFUSED';
+      suggestion = 'The host refused connection. Ensure the provider endpoint or local port is active.';
+    } else if (msg.includes('ECONNRESET')) {
+      code = 'CONNECTION_RESET';
+      suggestion = 'The connection was reset. The server closed the socket prematurely.';
+    } else if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
+      code = 'CONNECTION_TIMEOUT';
+      suggestion = 'The connection timed out. Check network traffic or increase the timeout limit.';
+    } else if (msg.includes('CERT') || msg.includes('certificate') || msg.includes('SSL')) {
+      code = 'SSL_ERROR';
+      suggestion = 'SSL certificate verification failed. Check certificate validation settings.';
+    } else if (msg.includes('401') || msg.includes('Unauthorized')) {
+      code = 'AUTHENTICATION_FAILED';
+      suggestion = 'Authentication failed. Please verify that your API key is correctly configured.';
+    } else if (msg.includes('429') || msg.includes('rate limit')) {
+      code = 'RATE_LIMIT_EXCEEDED';
+      suggestion = 'You are being rate limited. Please cool down before making another request.';
     }
 
-    if (msg.includes('ECONNREFUSED')) {
-      const hostname = getHostname(url);
-      const port = getPort(url);
-      const connErr = new Error(
-        `Connection refused: ${hostname}:${port}. The server may be down or not accepting connections.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: Make sure the service is running and the port is correct.`,
-      );
-      connErr.cause = err;
-      if ('statusCode' in err) (connErr as any).statusCode = (err as any).statusCode;
-      return connErr;
-    }
-
-    if (msg.includes('ECONNRESET')) {
-      const resetErr = new Error(
-        `Connection reset by peer. The server closed the connection unexpectedly.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      resetErr.cause = err;
-      if ('statusCode' in err) (resetErr as any).statusCode = (err as any).statusCode;
-      return resetErr;
-    }
-
-    if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
-      const hostname = getHostname(url);
-      const timeoutErr = new Error(
-        `Connection timed out: ${hostname}. The server is not responding.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: Check your network connection or increase the timeout.`,
-      );
-      timeoutErr.cause = err;
-      if ('statusCode' in err) (timeoutErr as any).statusCode = (err as any).statusCode;
-      return timeoutErr;
-    }
-
-    if (msg.includes('CERT') || msg.includes('certificate') || msg.includes('SSL')) {
-      const sslErr = new Error(
-        `SSL certificate error. The server's SSL certificate is invalid.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      sslErr.cause = err;
-      if ('statusCode' in err) (sslErr as any).statusCode = (err as any).statusCode;
-      return sslErr;
-    }
-
-    if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('Authentication')) {
-      const authErr = new Error(
-        `Authentication failed. Check your API key.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      authErr.cause = err;
-      if ('statusCode' in err) (authErr as any).statusCode = (err as any).statusCode;
-      return authErr;
-    }
-
-    if (msg.includes('429') || msg.includes('rate limit')) {
-      const rateErr = new Error(
-        `Rate limit exceeded. Try again later.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      rateErr.cause = err;
-      if ('statusCode' in err) (rateErr as any).statusCode = (err as any).statusCode;
-      return rateErr;
-    }
-
-    const statusMatch = msg.match(/HTTP (\d+)/);
-    if (statusMatch) {
-      const httpErr = new Error(
-        `HTTP ${statusMatch[1]} error from server.\n` +
-        `  URL: ${url}\n` +
-        `  Detail: ${msg}`,
-      );
-      httpErr.cause = err;
-      if ('statusCode' in err) (httpErr as any).statusCode = (err as any).statusCode;
-      return httpErr;
-    }
-
-    const finalErr = new Error(
-      `Request failed.\n  URL: ${url}\n  Detail: ${msg}`,
+    const resultErr = new LibreError(
+      code,
+      'network',
+      err.message,
+      suggestion,
+      `URL: ${url}\nDiagnostics: ${JSON.stringify(diag)}`,
+      err
     );
-    finalErr.cause = err;
-    if ('statusCode' in err) (finalErr as any).statusCode = (err as any).statusCode;
-    return finalErr;
+    if ('statusCode' in err) {
+      (resultErr as any).statusCode = (err as any).statusCode;
+    }
+    return resultErr;
   }
 }
 
