@@ -118,14 +118,23 @@ Use `/model <alias>` in the TUI to switch model selection strategy:
 
 | Command | Description |
 |---|---|
-| `/help` | Show help |
-| `/exit` | Exit |
-| `/clear` | Clear conversation |
-| `/model <alias>` | Switch model (e.g. `/model best-free`) |
-| `/status` | Session status |
-| `/tokens` | Token usage |
-| `/doctor` | Run diagnostics |
-| `/compact` | Compact context |
+| `/help` | Show this help |
+| `/exit` / `/quit` | Exit LibreCode |
+| `/clear` | Clear conversation history |
+| `/status` | Show current session status |
+| `/tokens` / `/t` | Show context window usage |
+| `/cost` | Show token usage and cost info |
+| `/doctor` | Run system diagnostics and health checks |
+| `/provider` | Information on managing providers |
+| `/model <name>` | Switch model strategy or free model |
+| `/permissions` / `/perms` | Information on managing tool permissions |
+| `/compact` | Manually compact conversation context |
+| `/workspace` | Show active workspace directory |
+| `/session` | Show session context usage |
+| `/git` | Information on git operations |
+| `/config` | Information on configuration |
+| `/tools` | List registered tools |
+| `/logs` | Show log file location |
 
 ## Configuration
 
@@ -250,6 +259,9 @@ All 10 packages build and lint (zero errors, zero warnings). 81 provider tests p
 
 ### What works
 
+- **Architectural Foundation** — Event Bus, Unified Error Hierarchy (`LibreError`), and lightweight `Result<T, E>` types.
+- **Dynamic Command Framework** — Decoupled, self-registering framework for TUI commands (0 switch statements, validation, aliases, and lifecycle hooks).
+- **HTTP Client** — Retries, connections reuse, streaming, dns/connect/read timeout controls.
 - Zero-configuration first run with free model auto-discovery
 - Intelligent auto-router with 9 model aliases
 - Background health monitoring with automatic degradation
