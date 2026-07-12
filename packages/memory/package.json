@@ -1,6 +1,6 @@
 {
   "name": "librecode-memory",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Context management and memory compaction for librecode",
   "license": "MIT",
   "publishConfig": {
