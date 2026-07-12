@@ -1,5 +1,16 @@
 # librecode-providers
 
+## 0.3.5
+
+### Patch Changes
+
+- fix: add /setup command to TUI and restore direct arguments to /provider command
+
+- Updated dependencies []:
+  - librecode-config@0.3.5
+  - librecode-types@0.3.5
+  - librecode-utils@0.3.5
+
 ## 0.3.4
 
 ### Patch Changes

@@ -152,10 +152,32 @@ const providerCommand: Command = {
   execute(ctx: CommandContext) {
     if (!ctx.tuiApp || !ctx.providerManager) return;
     
-    // We only support switching providers inside the interactive menu here
-    const registry = ctx.providerManager['registry']; // ProviderRegistry is private, but we can access it or just use the config
+    const registry = ctx.providerManager['registry']; 
     const config = ctx.providerManager['configManager']?.load();
     if (!config) return;
+
+    // Fast path: if argument provided, switch immediately
+    if (ctx.args.length > 0) {
+      const target = ctx.args[0]!.toLowerCase();
+      
+      if (target === 'free' || target === 'switch' && ctx.args[1] === 'free') {
+        config.defaultProvider = 'free';
+        ctx.providerManager!['configManager']?.save(config);
+        ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33mfree\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
+        return;
+      }
+
+      const id = target === 'switch' ? ctx.args[1]?.toLowerCase() : target;
+      if (id && config.providers && config.providers[id]) {
+        config.defaultProvider = id;
+        ctx.providerManager!['configManager']?.save(config);
+        ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33m${id}\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
+        return;
+      } else if (id) {
+        ctx.tuiApp!.addToConversation(`\x1B[31mProvider '${id}' is not configured. Configured providers: ${Object.keys(config.providers || {}).join(', ')}\x1B[39m`, 'system');
+        return;
+      }
+    }
 
     const items: import('librecode-ui').PaletteItem[] = [];
 
@@ -401,6 +423,21 @@ const historyCommand: Command = {
   },
 };
 
+// 19. setup
+const setupCommand: Command = {
+  metadata: {
+    name: 'setup',
+    description: 'Run setup wizard',
+    usage: '/setup',
+    examples: ['/setup'],
+  },
+  execute(ctx: CommandContext) {
+    if (ctx.tuiApp) {
+      ctx.tuiApp.addToConversation('\x1B[33mTo run the interactive setup wizard, exit LibreCode (/exit) and run `librecode setup` in your terminal.\x1B[39m', 'system');
+    }
+  },
+};
+
 // Register all commands
 globalCommandRegistry.register(helpCommand);
 globalCommandRegistry.register(exitCommand);
@@ -420,3 +457,4 @@ globalCommandRegistry.register(configCommand);
 globalCommandRegistry.register(toolsCommand);
 globalCommandRegistry.register(logsCommand);
 globalCommandRegistry.register(historyCommand);
+globalCommandRegistry.register(setupCommand);
