@@ -321,7 +321,12 @@ export class HttpClient {
     };
 
     try {
-      const response = await fetch(url.toString(), fetchOptions);
+      let fetchUrl = url.toString();
+      // Workaround for Node.js fetch() failing on localhost with IPv6 (e.g. in Termux)
+      if (url.hostname === 'localhost') {
+        fetchUrl = fetchUrl.replace('localhost', '127.0.0.1');
+      }
+      const response = await fetch(fetchUrl, fetchOptions);
 
       diag.httpStatus = response.status;
       diag.contentType = response.headers.get('content-type') ?? undefined;

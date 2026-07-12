@@ -1,6 +1,6 @@
 {
   "name": "librecode-types",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Core type definitions for librecode",
   "license": "MIT",
   "publishConfig": {

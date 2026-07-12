@@ -112,8 +112,17 @@ export class OpenAICompatibleProvider extends BaseProvider {
   constructor(options: OpenAICompatibleOptions) {
     super();
     this.providerName = options.name;
+    
+    // Sanitize baseUrl by stripping common endpoint suffixes if the user accidentally included them
+    let cleanBaseUrl = options.baseUrl.replace(/\/$/, '');
+    if (cleanBaseUrl.endsWith('/chat/completions')) {
+      cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length).replace(/\/$/, '');
+    } else if (cleanBaseUrl.endsWith('/models')) {
+      cleanBaseUrl = cleanBaseUrl.slice(0, -'/models'.length).replace(/\/$/, '');
+    }
+    
     this.httpClient = new HttpClient({
-      baseUrl: options.baseUrl.replace(/\/$/, ''),
+      baseUrl: cleanBaseUrl,
       apiKey: options.apiKey,
       organization: options.organization,
       project: options.project,

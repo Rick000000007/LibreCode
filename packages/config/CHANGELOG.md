@@ -1,5 +1,14 @@
 # librecode-config
 
+## 0.3.4
+
+### Patch Changes
+
+- fix: sanitize NVIDIA base URL and handle localhost IPv6 resolution in Termux
+
+- Updated dependencies []:
+  - librecode-types@0.3.4
+
 ## 0.3.3
 
 ### Patch Changes
