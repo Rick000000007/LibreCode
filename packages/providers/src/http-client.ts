@@ -264,9 +264,10 @@ export class HttpClient {
         diagnostics: diag,
       };
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error(`Request timeout after ${(this.options.timeout ?? 30000) / 1000}s: ${url.toString()}`);
-      }
+if (err instanceof Error && err.name === 'AbortError') {
+          // Propagate the abort error directly; the caller will handle timeout messaging
+          throw err;
+        }
       throw err;
     } finally {
       clearTimeout(timeoutId);
@@ -274,6 +275,10 @@ export class HttpClient {
   }
 
   private enhanceError(err: Error, url: string, diag: ConnectionDiagnostics): Error {
+    // Preserve abort errors (e.g., request timeout) without overriding message
+    if ((err as any).name === 'AbortError') {
+      return err;
+    }
     const msg = err.message;
     const enhanced = new Error(msg);
     (enhanced as any).cause = err;

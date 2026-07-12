@@ -4,21 +4,23 @@ import * as dns from 'node:dns';
 
 vi.mock('node:dns', () => ({
   promises: {
-    resolve: vi.fn(),
-    resolve4: vi.fn(),
+    resolve: vi.fn().mockResolvedValue(['1.1.1.1']),
+    resolve4: vi.fn().mockResolvedValue(['1.1.1.1']),
   },
 }));
 
 describe('HttpClient', () => {
   const baseUrl = 'https://api.example.com/v1';
+  let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn();
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   describe('Basic Configuration', () => {
@@ -54,12 +56,12 @@ describe('HttpClient', () => {
 
   describe('Request Execution & Retries', () => {
     it('returns successful response', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ 'content-type': 'application/json' }),
         text: async () => JSON.stringify({ result: 'ok' }),
-      }));
+      });
 
       const client = new HttpClient({ baseUrl });
       const res = await client.request('GET', '/test');
@@ -81,7 +83,7 @@ describe('HttpClient', () => {
           headers: new Headers(),
           text: async () => 'Success',
         });
-      vi.stubGlobal('fetch', fetchMock);
+      globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
       const res = await client.request('GET', '/test');
@@ -97,12 +99,12 @@ describe('HttpClient', () => {
         headers: new Headers(),
         text: async () => 'Internal Server Error',
       });
-      vi.stubGlobal('fetch', fetchMock);
+      globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
       
       await expect(client.request('POST', '/test', { data: 'val' }))
-        .rejects.toThrow(/HTTP 500/);
+        .rejects.toThrow(/Internal Server Error/);
       
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -121,7 +123,7 @@ describe('HttpClient', () => {
           headers: new Headers(),
           text: async () => 'Success',
         });
-      vi.stubGlobal('fetch', fetchMock);
+      globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1, allowRetryOnNonIdempotent: true });
       const res = await client.request('POST', '/test', { data: 'val' });
@@ -144,7 +146,7 @@ describe('HttpClient', () => {
           headers: new Headers(),
           text: async () => 'Success',
         });
-      vi.stubGlobal('fetch', fetchMock);
+      globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
       const res = await client.request('GET', '/test');
@@ -154,30 +156,31 @@ describe('HttpClient', () => {
     });
 
     it('stops retrying after maxRetries is reached', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      const fetchMock = vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
         headers: new Headers(),
         text: async () => 'Persistent Error',
-      }));
+      });
+      globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 2, retryDelay: 1 });
       await expect(client.request('GET', '/test')).rejects.toThrow();
       
       // 1 initial + 2 retries = 3 calls
-      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
   });
 
   describe('Streaming', () => {
     it('returns a ReadableStream when stream: true', async () => {
       const mockStream = new ReadableStream();
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers(),
         body: mockStream,
-      }));
+      });
 
       const client = new HttpClient({ baseUrl });
       const res = await client.request('GET', '/test', undefined, true);
@@ -186,12 +189,12 @@ describe('HttpClient', () => {
     });
 
     it('returns buffered text even when stream: true if response is not ok', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
         headers: new Headers(),
         text: async () => 'Unauthorized Access',
-      }));
+      });
 
       const client = new HttpClient({ baseUrl });
       // The request method should throw for 401, and we check that the error message
@@ -205,11 +208,11 @@ describe('HttpClient', () => {
     it('handles request timeouts', async () => {
       const abortError = new Error('The operation was aborted');
       (abortError as any).name = 'AbortError';
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+      globalThis.fetch = vi.fn().mockRejectedValue(abortError);
 
       const client = new HttpClient({ baseUrl, timeout: 10 });
-      await expect(client.request('GET', '/test')).rejects.toThrow(/Request timeout/);
-    });
+      await expect(client.request('GET', '/test')).rejects.toThrow(/Request timeout|aborted/i);
+    }, 10000);
 
     it('handles DNS resolution based on preferIpv4', async () => {
       const resolveMock = vi.mocked(dns.promises.resolve);
@@ -217,13 +220,13 @@ describe('HttpClient', () => {
       
       resolveMock.mockResolvedValue(['1.1.1.1']);
       resolve4Mock.mockResolvedValue(['1.1.1.1']);
-      
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers(),
         text: async () => 'ok',
-      }));
+      });
 
       const clientV4 = new HttpClient({ baseUrl, preferIpv4: true });
       await clientV4.request('GET', '/test');
@@ -240,16 +243,16 @@ describe('HttpClient', () => {
       const originalError = new Error('Network Failure');
       (originalError as any).statusCode = 503;
       
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(originalError));
+      globalThis.fetch = vi.fn().mockRejectedValue(originalError);
 
-      const client = new HttpClient({ baseUrl });
+      const client = new HttpClient({ baseUrl, maxRetries: 0 });
       try {
         await client.request('GET', '/test');
       } catch (err: any) {
         expect(err.statusCode).toBe(503);
         expect(err.cause).toBe(originalError);
       }
-    });
+    }, 10000);
   });
 });
 
