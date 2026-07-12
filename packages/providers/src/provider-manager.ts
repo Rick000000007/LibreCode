@@ -60,6 +60,7 @@ export class ProviderManager {
       this.autoRouter,
       this.streamingEngine,
       this.conversationStore,
+      this.factory,
     );
     this.providerDiscovery = new ProviderDiscovery(this.modelRegistry);
   }

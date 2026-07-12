@@ -30,10 +30,7 @@ jobs:
 
       - run: pnpm lint
 
-
-
-
-
+      - run: pnpm test
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4

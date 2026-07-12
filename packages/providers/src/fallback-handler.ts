@@ -6,6 +6,7 @@ import { ModelRegistry } from './model-registry.js';
 import { StreamingEngine, StreamCallback } from './streaming-engine.js';
 import { AutoRouter } from './auto-router.js';
 import { ConversationStore } from './conversation-store.js';
+import { ProviderFactory } from './provider-factory.js';
 
 export interface FallbackOptions {
   maxRetries: number;
@@ -28,6 +29,7 @@ export class FallbackHandler {
   private router: AutoRouter;
   private streaming: StreamingEngine;
   private conversation: ConversationStore;
+  private factory: ProviderFactory;
 
   constructor(
     health: HealthMonitor,
@@ -35,6 +37,7 @@ export class FallbackHandler {
     router: AutoRouter,
     streaming: StreamingEngine,
     conversation: ConversationStore,
+    factory: ProviderFactory,
     options?: Partial<FallbackOptions>,
   ) {
     this.health = health;
@@ -42,6 +45,7 @@ export class FallbackHandler {
     this.router = router;
     this.streaming = streaming;
     this.conversation = conversation;
+    this.factory = factory;
     this.options = { ...DEFAULT_OPTIONS, ...options };
   }
 
@@ -167,13 +171,14 @@ export class FallbackHandler {
     try {
       const decision = await this.router.route({ intent: 'auto' });
       if (decision.provider !== failedProviderId) {
-        // Return a placeholder — the caller is responsible for provider resolution
-        return { id: decision.provider, provider: null as unknown as LLMProvider };
+        const provider = this.factory.create(decision.provider, { enabled: true });
+        return { id: decision.provider, provider };
       }
       // Try next alternative
       for (const alt of decision.alternatives) {
         if (alt.provider !== failedProviderId) {
-          return { id: alt.provider, provider: null as unknown as LLMProvider };
+          const provider = this.factory.create(alt.provider, { enabled: true });
+          return { id: alt.provider, provider };
         }
       }
     } catch {

@@ -2,7 +2,19 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "Rick000000007/LibreCode" }],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "librecode",
+      "librecode-types",
+      "librecode-config",
+      "librecode-utils",
+      "librecode-memory",
+      "librecode-providers",
+      "librecode-tools",
+      "librecode-ui",
+      "librecode-core"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "master",

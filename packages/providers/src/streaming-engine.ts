@@ -124,7 +124,7 @@ export class StreamingEngine {
 
   async complete(
     provider: LLMProvider,
-    _providerId: string,
+    providerId: string,
     request: CompletionRequest,
   ): Promise<{
     content: string;
@@ -134,8 +134,10 @@ export class StreamingEngine {
     const events: UnifiedStreamEvent[] = [];
     const controller = this.createController();
 
+    this.setActiveProvider(providerId);
+
     return new Promise((resolve, reject) => {
-      this.runStream(provider, _providerId, request, (event) => {
+      this.runStream(provider, providerId, request, (event) => {
         events.push(event);
         if (event.type === 'done') {
           const content = events

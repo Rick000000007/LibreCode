@@ -26,7 +26,9 @@ import {
 import { parseBuiltin } from './commands.js';
 import { TuiApp } from 'librecode-ui';
 
-const VERSION = '0.2.2';
+const VERSION = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'),
+).version as string;
 
 function parseArgs(argv: string[]): Partial<CliOptions> {
   const options: Partial<CliOptions> = {};

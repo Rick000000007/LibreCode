@@ -69,7 +69,6 @@ export class ProviderFactory {
   }
 
   private createFreeProvider(_entry: ProviderEntry): LLMProvider {
-    const provider = new FreeProvider();
-    return provider as unknown as LLMProvider;
+    return new FreeProvider();
   }
 }
