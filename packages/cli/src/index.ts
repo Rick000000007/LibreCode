@@ -304,14 +304,19 @@ async function main(): Promise<void> {
         const parts = trimmed.slice(1).trim().split(/\s+/);
         const name = parts[0]?.toLowerCase() ?? '';
         const args = parts.slice(1);
-        await globalCommandRegistry.executeCommand(name, {
-          agent,
-          providerManager,
-          config,
-          workingDir,
-          tuiApp,
-          args,
-        });
+        try {
+          await globalCommandRegistry.executeCommand(name, {
+            agent,
+            providerManager,
+            config,
+            workingDir,
+            tuiApp,
+            args,
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          tuiApp.addToConversation(`\x1B[31mError executing command: ${msg}\x1B[39m`, 'system');
+        }
         tuiApp.render();
         return;
       }
@@ -413,7 +418,7 @@ async function main(): Promise<void> {
     'system',
   );
 
-  tuiApp.render();
+  tuiApp.start();
 }
 
 function findConfig(): string | null {
