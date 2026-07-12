@@ -1,5 +1,7 @@
 # LibreCode
 
+<!-- trigger release -->
+
 AI coding agent. Works like Claude Code, OpenCode, or Cursor — but open source, modular, and provider-agnostic.
 
 [![CI](https://github.com/Rick000000007/LibreCode/actions/workflows/ci.yml/badge.svg)](https://github.com/Rick000000007/LibreCode/actions/workflows/ci.yml)
