@@ -1,5 +1,11 @@
 # librecode-types
 
+## 0.3.1
+
+### Patch Changes
+
+- [`7a9ed06`](https://github.com/Rick000000007/LibreCode/commit/7a9ed06bb7b4ed5c72c6b0f90bb3ead2da72d06a) Thanks [@Rick000000007](https://github.com/Rick000000007)! - Fix TUI rendering issue by triggering TUI engine updates immediately after dynamic command framework executions.
+
 ## 0.3.0
 
 ### Minor Changes
