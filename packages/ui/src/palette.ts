@@ -163,6 +163,36 @@ export class CommandPalette {
     this.render();
   }
 
+  handleKey(key: { name: string; ctrl: boolean; meta: boolean }): boolean {
+    if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+      this.close();
+      return true;
+    }
+    if (key.name === 'enter') {
+      this.executeSelected();
+      return true;
+    }
+    if (key.name === 'up') {
+      this.selectPrev();
+      return true;
+    }
+    if (key.name === 'down') {
+      this.selectNext();
+      return true;
+    }
+    if (key.name === 'backspace') {
+      if (this.query.length > 0) {
+        this.updateQuery(this.query.slice(0, -1));
+      }
+      return true;
+    }
+    if (!key.ctrl && !key.meta && key.name.length === 1) {
+      this.updateQuery(this.query + key.name);
+      return true;
+    }
+    return true; // absorb all other keys while open
+  }
+
   async executeSelected(): Promise<void> {
     const selected = this.getSelected();
     if (!selected) return;

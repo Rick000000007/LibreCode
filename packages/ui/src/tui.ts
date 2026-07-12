@@ -70,6 +70,7 @@ export class TuiEngine {
     if (!this.cap.isTTY || this.rawMode) return;
     this.stdin.setRawMode(true);
     this.stdin.resume();
+    this.stdout.write('\x1B[?2004h'); // Enable bracketed paste
     this.rawMode = true;
   }
 
@@ -77,6 +78,7 @@ export class TuiEngine {
     if (!this.rawMode) return;
     this.stdin.setRawMode(false);
     this.stdin.pause();
+    this.stdout.write('\x1B[?2004l'); // Disable bracketed paste
     this.rawMode = false;
   }
 
@@ -209,8 +211,10 @@ export class TuiEngine {
   private parseNextKey(): KeyEvent | null {
     if (this.inputBuffer.length === 0) return null;
 
-    const ch = this.inputBuffer[0]!;
-    const code = ch.charCodeAt(0);
+    // Read a full unicode code point (handles basic emojis/surrogate pairs)
+    const code = this.inputBuffer.codePointAt(0)!;
+    const charLen = code > 0xffff ? 2 : 1;
+    const ch = this.inputBuffer.slice(0, charLen);
 
     if (code === 0x1b) {
       if (this.inputBuffer.length >= 2 && this.inputBuffer[1] === '[') {
@@ -233,13 +237,34 @@ export class TuiEngine {
       return null;
     }
 
-    if (code < 32) {
+    if (code === 0x7f) {
       this.inputBuffer = this.inputBuffer.slice(1);
+      return {
+        name: 'backspace',
+        ctrl: false,
+        meta: false,
+        shift: false,
+        sequence: ch,
+      };
+    }
+
+    if (code === 0x7f) {
+      this.inputBuffer = this.inputBuffer.slice(charLen);
+      return {
+        name: 'backspace',
+        ctrl: false,
+        meta: false,
+        shift: false,
+        sequence: ch,
+      };
+    }
+
+    if (code < 32) {
+      this.inputBuffer = this.inputBuffer.slice(charLen);
       const name = code === 0x09 ? 'tab'
         : code === 0x0a ? 'enter'
         : code === 0x0d ? 'enter'
         : code === 0x08 ? 'backspace'
-        : code === 0x7f ? 'backspace'
         : code === 0x1b ? 'escape'
         : String.fromCharCode(code + 64).toLowerCase();
       return {
@@ -251,7 +276,7 @@ export class TuiEngine {
       };
     }
 
-    this.inputBuffer = this.inputBuffer.slice(1);
+    this.inputBuffer = this.inputBuffer.slice(charLen);
     return {
       name: ch,
       ctrl: false,
@@ -318,6 +343,7 @@ export class TuiEngine {
         11: 'f1', 12: 'f2', 13: 'f3', 14: 'f4',
         15: 'f5', 17: 'f6', 18: 'f7', 19: 'f8',
         20: 'f9', 21: 'f10', 23: 'f11', 24: 'f12',
+        200: 'paste_start', 201: 'paste_end',
       };
       return {
         name: fnMap[p1] ?? `unknown_${p1}`,

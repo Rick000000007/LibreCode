@@ -34,6 +34,7 @@ export class InputHandler {
   private completer: Completer;
   private multiLine = false;
   private multiLineBuffer: string[] = [];
+  private isPasting = false;
 
   constructor(options: InputOptions) {
     this.options = options;
@@ -219,25 +220,53 @@ export class InputHandler {
       return true;
     }
 
-    if (ctrl && name === 'f') {
-      if (this.cursor < this.buffer.length) {
-        this.cursor++;
-        this.renderInput();
+    if (name === 'left' || (ctrl && name === 'b')) {
+      if (ctrl && name === 'left') {
+        // Jump word left
+        const before = this.buffer.slice(0, this.cursor);
+        const match = before.match(/\S+\s*$/) || before.match(/\s+$/);
+        if (match) {
+          this.cursor -= match[0].length;
+        } else {
+          this.cursor = 0;
+        }
+      } else if (this.cursor > 0) {
+        this.cursor--;
       }
+      this.renderInput();
       return true;
     }
 
-    if (ctrl && name === 'b') {
-      if (this.cursor > 0) {
-        this.cursor--;
-        this.renderInput();
+    if (name === 'right' || (ctrl && name === 'f')) {
+      if (ctrl && name === 'right') {
+        // Jump word right
+        const after = this.buffer.slice(this.cursor);
+        const match = after.match(/^\s*\S+/) || after.match(/^\s+/);
+        if (match) {
+          this.cursor += match[0].length;
+        } else {
+          this.cursor = this.buffer.length;
+        }
+      } else if (this.cursor < this.buffer.length) {
+        this.cursor++;
       }
+      this.renderInput();
+      return true;
+    }
+
+    if (name === 'paste_start') {
+      this.isPasting = true;
+      return true;
+    }
+    if (name === 'paste_end') {
+      this.isPasting = false;
+      this.onChange();
       return true;
     }
 
     if (!ctrl && !key.meta && name.length === 1) {
       this.buffer = this.buffer.slice(0, this.cursor) + name + this.buffer.slice(this.cursor);
-      this.cursor++;
+      this.cursor += name.length;
       this.onChange();
       return true;
     }
@@ -246,6 +275,7 @@ export class InputHandler {
   }
 
   private onChange(): void {
+    if (this.isPasting) return;
     this.renderInput();
 
     if (this.suggestTimer) clearTimeout(this.suggestTimer);
@@ -344,11 +374,16 @@ export class InputHandler {
   }
 
   renderInput(): void {
+    if (this.isPasting) return;
     const y = this.tui.height - 1;
     const prompt = this.options.prompt;
 
     this.tui.cursorTo(0, y);
-    this.tui.write(`\x1B[2K\r${prompt}${this.buffer}`);
+    if (this.buffer === '') {
+      this.tui.write(`\x1B[2K\r${prompt}\x1B[90mType a request or /help. Ctrl+K for menu.\x1B[39m`);
+    } else {
+      this.tui.write(`\x1B[2K\r${prompt}${this.buffer}`);
+    }
 
     // Position cursor at the right spot
     const cursorX = stripAnsiLen(prompt) + this.cursor;

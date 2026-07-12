@@ -12,24 +12,7 @@ const helpCommand: Command = {
   },
   execute(ctx: CommandContext) {
     if (ctx.tuiApp) {
-      const helpText = [
-        '**Commands**',
-        '',
-        '`/help` - Show this help',
-        '`/exit` - Exit librecode',
-        '`/clear` - Clear conversation',
-        '`/status` - Session status',
-        '`/tokens` - Token usage',
-        '`/cost` - Session cost',
-        '`/doctor` - Run diagnostics',
-        '`/provider` - Manage providers',
-        '`/model` - Switch model',
-        '`/git` - Git operations',
-        '`/compact` - Compact context',
-        '`/workspace` - Workspace info',
-        '`/config` - Configuration',
-      ].join('\n');
-      ctx.tuiApp.addMarkdown(helpText);
+      ctx.tuiApp.openCommandPalette();
     }
   },
 };
@@ -167,11 +150,45 @@ const providerCommand: Command = {
     examples: ['/provider list', '/provider switch openai', '/provider test gemini'],
   },
   execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation(
-        `\x1B[90mUse \x1B[33mlibrecode provider <command>\x1B[39m \x1B[90mfrom your terminal to manage providers.\x1B[39m`,
-        'system',
-      );
+    if (!ctx.tuiApp || !ctx.providerManager) return;
+    
+    // We only support switching providers inside the interactive menu here
+    const registry = ctx.providerManager['registry']; // ProviderRegistry is private, but we can access it or just use the config
+    const config = ctx.providerManager['configManager']?.load();
+    if (!config) return;
+
+    const items: import('librecode-ui').PaletteItem[] = [];
+
+    // Add free mode explicitly
+    items.push({
+      id: 'free',
+      category: 'System',
+      label: 'Free Mode (Auto)',
+      description: 'Automatically route to the best free models available',
+      action: async () => {
+        config.defaultProvider = 'free';
+        ctx.providerManager!['configManager']?.save(config);
+        ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33mfree\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
+      }
+    });
+
+    for (const [id, entry] of Object.entries(config.providers || {}) as [string, any][]) {
+      if (!entry || !entry.enabled) continue;
+      items.push({
+        id,
+        category: 'Configured Providers',
+        label: id,
+        description: `Switch to ${id}`,
+        action: async () => {
+          config.defaultProvider = id;
+          ctx.providerManager!['configManager']?.save(config);
+          ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33m${id}\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
+        }
+      });
+    }
+
+    if (items.length > 0) {
+      ctx.tuiApp.openCommandPalette(items);
     }
   },
 };
@@ -189,20 +206,42 @@ const modelCommand: Command = {
 
     const modelArg = ctx.args.join(' ');
     if (!modelArg) {
-      const fp = ctx.providerManager?.getFreeProvider();
-      if (fp) {
-        const aliases = fp.getAliases();
-        const models = await ctx.providerManager!.listFreeModels();
-        const lines = [
-          '**Free Models Available**',
-          '',
-          '**Aliases:**',
-          ...Object.entries(aliases).map(([alias, m]) => `  \`/model ${alias}\` → ${m || 'auto-best'}`),
-          '',
-          '**Available models:**',
-          ...models.map((m) => `  \`${m.id}\``),
-        ];
-        ctx.tuiApp.addMarkdown(lines.join('\n'));
+      const active = ctx.providerManager?.getActiveProvider();
+      if (active?.type === 'free') {
+        const fp = ctx.providerManager?.getFreeProvider();
+        if (fp) {
+          const models = await ctx.providerManager!.listFreeModels();
+          const items = models.map((m) => ({
+            id: m.id,
+            category: 'Free Models',
+            label: m.id,
+            description: `Switch to ${m.id}`,
+            action: () => {
+              fp.setModel(m.id);
+              const mi = fp.getModel();
+              ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
+              ctx.tuiApp!.setProviderInfo('Free', mi.name);
+            }
+          }));
+          const aliases = fp.getAliases();
+          for (const [alias, m] of Object.entries(aliases)) {
+            items.unshift({
+              id: alias,
+              category: 'Aliases',
+              label: alias,
+              description: `Alias for ${m || 'auto-best'}`,
+              action: () => {
+                fp.setModel(alias);
+                const mi = fp.getModel();
+                ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
+                ctx.tuiApp!.setProviderInfo('Free', mi.name);
+              }
+            });
+          }
+          ctx.tuiApp.openCommandPalette(items);
+        }
+      } else if (active) {
+        ctx.tuiApp.addToConversation('\x1B[90mModel switching via menu is currently only supported for the free tier. Edit ~/.rcode.toml to change your premium provider model.\x1B[39m', 'system');
       } else {
         ctx.tuiApp.addToConversation('\x1B[90mUse /provider switch <name> to change provider.\x1B[39m', 'system');
       }

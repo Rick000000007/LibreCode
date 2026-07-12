@@ -94,15 +94,45 @@ export class Layout {
     this.tui.cursorTo(r.x, r.y);
     this.tui.write(`\x1B[2K${theme.dim}${'\u2500'.repeat(r.width)}${theme.reset}`);
 
+    const spinnerFrames = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
+    const spinnerColors = ['\x1B[35m', '\x1B[34m', '\x1B[36m', '\x1B[32m', '\x1B[33m', '\x1B[31m']; // magenta, blue, cyan, green, yellow, red
+
     for (let i = 0; i < Math.min(activeSteps.length, r.height - 1); i++) {
       const step = activeSteps[i]!;
-      const statusIcon = step.status === 'active'
-        ? `${theme.secondary}\u25CB${theme.reset}`
-        : step.status === 'completed'
-          ? `${theme.success}\u2714${theme.reset}`
-          : step.status === 'failed'
-            ? `${theme.error}\u2718${theme.reset}`
-            : `${theme.dim}\u25CB${theme.reset}`;
+      
+      let statusIcon = '';
+      if (step.status === 'active') {
+        const frameIndex = Math.floor(Date.now() / 70) % spinnerFrames.length;
+        const colorIndex = Math.floor(Date.now() / 70) % spinnerColors.length;
+        const symbol = spinnerFrames[frameIndex];
+        const color = spinnerColors[colorIndex];
+        statusIcon = `${color}${symbol}\x1B[39m`;
+      } else if (step.status === 'completed') {
+        const lower = step.label.toLowerCase();
+        let icon = '\u2714'; // ✔
+        let color = '\x1B[34m'; // blue
+        
+        if (lower.includes('read')) {
+          icon = '\u25A4'; // ▤
+          color = '\x1B[36m'; // cyan
+        } else if (lower.includes('writ') || lower.includes('edit')) {
+          icon = '\u270E'; // ✎
+          color = '\x1B[32m'; // green
+        } else if (lower.includes('run') || lower.includes('exec') || lower.includes('command')) {
+          icon = '\u276F'; // ❯
+          color = '\x1B[33m'; // yellow
+        } else if (lower.includes('analyz') || lower.includes('search')) {
+          icon = '\u25A4'; // ▤
+          color = '\x1B[36m'; // cyan
+        }
+        
+        statusIcon = `${color}${icon}\x1B[39m`;
+      } else if (step.status === 'failed') {
+        statusIcon = `\x1B[31m\u2716\x1B[39m`; // red cross ✖
+      } else {
+        statusIcon = `${theme.dim}\u25CB${theme.reset}`;
+      }
+
       const label = step.label;
       const detail = step.detail ? ` ${theme.dim}${step.detail}${theme.reset}` : '';
 

@@ -202,25 +202,20 @@ async function main(): Promise<void> {
   }
 
   // Initialize provider
-  const active = await providerManager.initialize();
+  let active = await providerManager.initialize();
 
   if (!active) {
-    process.stdout.write(
-      '\x1B[33m╭──────────────────────────────────────────────────╮\x1B[39m\n' +
-      '\x1B[33m│\x1B[39m  \x1B[1mNo free model endpoints available\x1B[22m                \x1B[33m│\x1B[39m\n' +
-      '\x1B[33m╰──────────────────────────────────────────────────╯\x1B[39m\n\n' +
-      '\x1B[90m  To use free models, choose one of the following:\x1B[39m\n' +
-      '\x1B[90m  \x1B[33m1.\x1B[39m\x1B[90m Install Ollama locally:\x1B[39m\n' +
-      '\x1B[90m     Run \x1B[33mollama serve\x1B[39m\x1B[90m then restart librecode\x1B[39m\n' +
-      '\x1B[90m     (No API key needed, runs entirely offline)\x1B[39m\n' +
-      '\x1B[90m  \x1B[33m2.\x1B[39m\x1B[90m Set a free API key environment variable:\x1B[39m\n' +
-      '\x1B[90m     \x1B[33mGEMINI_API_KEY\x1B[39m\x1B[90m  — Google Gemini free tier\x1B[39m\n' +
-      '\x1B[90m     \x1B[33mGROQ_API_KEY\x1B[39m\x1B[90m   — Groq free tier (very fast)\x1B[39m\n' +
-      '\x1B[90m     \x1B[33mOPENROUTER_API_KEY\x1B[39m\x1B[90m — OpenRouter free models\x1B[39m\n' +
-      '\x1B[90m  \x1B[33m3.\x1B[39m\x1B[90m Configure a premium provider:\x1B[39m\n' +
-      '\x1B[90m     Run \x1B[33mlibrecode setup\x1B[39m\x1B[90m to run the setup wizard\x1B[39m\n',
-    );
-    process.exit(1);
+    const configMgr = new ConfigurationManager();
+    const wizard = new SetupWizard(new ProviderRegistry(), configMgr);
+    const configured = await wizard.run();
+    if (!configured) {
+      process.exit(1);
+    }
+    // Re-initialize after setup
+    active = await providerManager.initialize();
+    if (!active) {
+      process.exit(1);
+    }
   }
 
   // Resolve model display name for free provider
@@ -382,31 +377,48 @@ async function main(): Promise<void> {
 
       } catch (err: unknown) {
         let msg = '';
-        let suggestion = '';
+        let causes: string[] = [];
+        let actions: string[] = [];
 
         if (err instanceof LlmError) {
           msg = err.message || `Provider error (${err.code})`;
           if (err.code === 'auth_error') {
-            suggestion = 'Set your API key as an environment variable (e.g. GEMINI_API_KEY, GROQ_API_KEY, NVIDIA_API_KEY) then restart.';
+            causes = ['Invalid API key', 'API key not set in environment variables'];
+            actions = ['/provider', '/setup', 'Check environment variables (e.g. GEMINI_API_KEY)'];
           } else if (err.code === 'unavailable') {
-            suggestion = 'No free providers found. Set a free API key or run `ollama serve` for local models.';
+            causes = ['No free providers found', 'Local Ollama server not running', 'Network issue'];
+            actions = ['/setup', 'Run `ollama serve`', 'Check your internet connection'];
           } else if (err.code === 'rate_limited') {
-            suggestion = 'Wait a moment before sending another message, or switch providers with /model.';
+            causes = ['You have exceeded the provider quota', 'Too many requests in a short time'];
+            actions = ['Wait a moment before trying again', '/model (switch to a different provider)'];
+          } else if (err.code === 'model_not_found') {
+            causes = ['The requested model does not exist on this provider', 'Typo in model name'];
+            actions = ['/model (view available models)', '/provider'];
+          } else {
+            causes = ['Provider API returned an error', 'Network timeout'];
+            actions = ['/doctor', '/provider'];
           }
         } else if (err instanceof LibreError) {
           msg = err.message || `${err.code}: ${err.category}`;
-          suggestion = err.recoverySuggestion ?? '';
+          if (err.recoverySuggestion) actions.push(err.recoverySuggestion);
+          actions.push('/doctor');
         } else if (err instanceof Error) {
           msg = err.message || 'Unknown error';
+          actions.push('/doctor');
         } else {
           msg = String(err) || 'Unknown error';
+          actions.push('/doctor');
         }
 
-        if (!msg) msg = 'An unknown error occurred. Run /doctor to diagnose.';
+        if (!msg) msg = 'An unknown error occurred.';
 
-        tuiApp.addToConversation(`\x1B[31mError: ${msg}\x1B[39m`, 'system');
-        if (suggestion) {
-          tuiApp.addToConversation(`\x1B[33m  Tip: ${suggestion}\x1B[39m`, 'system');
+        tuiApp.addToConversation(`\x1B[31m\u2718 Error: ${msg}\x1B[39m`, 'system');
+        
+        if (causes.length > 0) {
+          tuiApp.addToConversation(`\x1B[90mPossible causes:\x1B[39m\n` + causes.map(c => `\x1B[90m \u2022 ${c}\x1B[39m`).join('\n'), 'system');
+        }
+        if (actions.length > 0) {
+          tuiApp.addToConversation(`\x1B[33mSuggested actions:\x1B[39m\n` + actions.map(a => `\x1B[33m \u2022 ${a}\x1B[39m`).join('\n'), 'system');
         }
         tuiApp.getWorkflow().failStep('thinking', msg);
       }
@@ -439,9 +451,12 @@ async function main(): Promise<void> {
   const welcomeProvider = active.type === 'free' ? 'Free' : active.id;
   tuiApp.addToConversation(
     `\x1B[36m\u250C\u2500\u2500\u2500 LibreCode v${VERSION} \u2500\u2500\u2500\u2510\x1B[39m\n` +
-    `\x1B[36m\u2502\x1B[39m Type /help for commands, Ctrl+K for palette\n` +
-    `\x1B[36m\u2502\x1B[39m Provider: ${welcomeProvider} | Model: ${modelDisplayName}\n` +
-    `\x1B[36m\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\x1B[39m`,
+    `\x1B[36m\u2502\x1B[39m Provider: ${welcomeProvider.padEnd(21)} \x1B[36m\u2502\x1B[39m\n` +
+    `\x1B[36m\u2502\x1B[39m Model: ${modelDisplayName.padEnd(24)} \x1B[36m\u2502\x1B[39m\n` +
+    `\x1B[36m\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\x1B[39m\n` +
+    `\x1B[90mWelcome! Type your question or request below.\x1B[39m\n` +
+    `\x1B[90mHelpful commands:\x1B[39m \x1B[36m/help  /model  /provider  /clear  /exit\x1B[39m\n` +
+    `\x1B[90mShortcuts:        \x1B[39m\x1B[36mCtrl+K\x1B[39m \x1B[90mfor Command Palette, \x1B[39m\x1B[36mCtrl+C\x1B[39m \x1B[90mto cancel\x1B[39m`,
     'system',
   );
 

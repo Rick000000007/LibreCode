@@ -7,7 +7,7 @@ import { WorkflowTracker } from './workflow.js';
 import { renderMarkdown } from './markdown.js';
 import { getTheme } from './theme.js';
 import { getTerminalCapabilities } from './terminal.js';
-
+import { CommandPalette } from './palette.js';
 
 export interface TuiAppOptions {
   provider: string;
@@ -34,6 +34,8 @@ export class TuiApp {
   private model: string;
   private gitBranch: string | null;
   private tokenPct = 0;
+  private palette: CommandPalette;
+  private renderInterval: NodeJS.Timeout | null = null;
 
   constructor(options: TuiAppOptions) {
     this.options = options;
@@ -70,9 +72,19 @@ export class TuiApp {
         this.openCommandPalette();
       },
     });
+
+    this.palette = new CommandPalette();
   }
 
   private handleKey(key: KeyEvent): boolean {
+    if (this.palette.isOpen()) {
+      const handled = this.palette.handleKey(key);
+      if (!this.palette.isOpen()) {
+        this.requestRender(); // Re-render TUI after closing
+      }
+      return handled;
+    }
+
     // Global shortcuts
     if (key.ctrl && key.name === 'b') {
       this.sidebar.toggle();
@@ -101,10 +113,22 @@ export class TuiApp {
     this.tui.enableRawMode();
     this.tui.setTitle('librecode - AI Coding Agent');
     this.tui.startInput();
+    
+    // Start animation loop for spinners
+    this.renderInterval = setInterval(() => {
+      if (this.workflow.getActiveStep()) {
+        this.requestRender();
+      }
+    }, 70);
+    
     this.render();
   }
 
   stop(): void {
+    if (this.renderInterval) {
+      clearInterval(this.renderInterval);
+      this.renderInterval = null;
+    }
     this.tui.stopInput();
     this.tui.showCursor();
     this.tui.destroy();
@@ -171,29 +195,27 @@ export class TuiApp {
     return this.layout;
   }
 
-  private openCommandPalette(): void {
-    const theme = getTheme();
-    const cap = getTerminalCapabilities();
-    const y = Math.floor(cap.height / 3);
-
-    // Draw overlay
-    this.tui.cursorTo(10, y);
-    const width = Math.min(cap.width - 20, 60);
-    const boxTop = `${theme.primary}\u250C${'\u2500'.repeat(width)}\u2510${theme.reset}`;
-    const boxMid = `${theme.primary}\u2502${theme.reset}${' '.repeat(width)}${theme.primary}\u2502${theme.reset}`;
-    const boxBot = `${theme.primary}\u2514${'\u2500'.repeat(width)}\u2518${theme.reset}`;
-
-    this.tui.write(`\n${boxTop}\n`);
-    for (let i = 0; i < 5; i++) {
-      this.tui.write(`${boxMid}\n`);
+  openCommandPalette(items?: import('./palette.js').PaletteItem[]): void {
+    if (items) {
+      this.palette.setItems(items);
+    } else {
+      // Default items (slash commands)
+      this.palette.setItems([
+        { id: 'help', category: 'General', label: 'help', description: 'Show help', action: () => { this.options.onCommand?.('help'); } },
+        { id: 'model', category: 'General', label: 'model', description: 'Switch model', action: () => { this.options.onCommand?.('model'); } },
+        { id: 'provider', category: 'General', label: 'provider', description: 'Manage providers', action: () => { this.options.onCommand?.('provider'); } },
+        { id: 'clear', category: 'General', label: 'clear', description: 'Clear context', action: () => { this.options.onCommand?.('clear'); } },
+        { id: 'status', category: 'General', label: 'status', description: 'Session status', action: () => { this.options.onCommand?.('status'); } },
+        { id: 'exit', category: 'General', label: 'exit', description: 'Exit', action: () => { this.options.onCommand?.('exit'); } },
+      ]);
     }
-    this.tui.write(`${boxBot}\n`);
-
-    this.tui.cursorTo(12, y + 1);
-    this.tui.write(`${theme.bold}Command Palette${theme.reset}`);
-    this.tui.cursorTo(12, y + 3);
-    this.tui.write(`${theme.dim}Type a command...${theme.reset}`);
-    this.tui.cursorTo(12, y + 3);
+    
+    // Clear screen area
+    this.tui.clearScreen();
+    this.requestRender();
+    
+    // Open palette
+    this.palette.open();
   }
 
   private requestRender(): void {

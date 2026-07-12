@@ -155,7 +155,10 @@ export class HttpClient {
       );
     }
 
-    const url = new URL(path, this.baseUrl);
+    // Ensure baseUrl ends with / and path doesn't start with / so new URL() preserves base paths
+    const baseHref = this.baseUrl.href.endsWith('/') ? this.baseUrl.href : `${this.baseUrl.href}/`;
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    const url = new URL(cleanPath, baseHref);
     const hostname = url.hostname;
     const diag: ConnectionDiagnostics = {};
 
