@@ -50,7 +50,8 @@ function isIdempotentMethod(method: string): boolean {
 }
 
 function isRetryableError(err: Error): boolean {
-  const msg = err.message.toLowerCase();
+  const cause = (err as any).cause;
+  const msg = `${err.message} ${cause instanceof Error ? cause.message : String(cause || '')}`.toLowerCase();
   return (
     msg.includes('econnrefused') ||
     msg.includes('econnreset') ||
@@ -326,6 +327,7 @@ export class HttpClient {
       if (url.hostname === 'localhost') {
         fetchUrl = fetchUrl.replace('localhost', '127.0.0.1');
       }
+
       const response = await fetch(fetchUrl, fetchOptions);
 
       diag.httpStatus = response.status;
@@ -366,11 +368,16 @@ export class HttpClient {
   }
 
   private enhanceError(err: Error, url: string, diag: ConnectionDiagnostics): LibreError {
-    const msg = err.message;
+    const cause = (err as any).cause;
+    let extraInfo = cause instanceof Error ? `${cause.message} ${(cause as any).code || ''}` : String(cause || '');
+    if (cause && Array.isArray(cause.errors)) {
+       extraInfo += ' ' + cause.errors.map((e: any) => `${e.message} ${e.code}`).join(' ');
+    }
+    const msg = `${err.message} ${extraInfo}`;
     let code = 'HTTP_REQUEST_FAILED';
     let suggestion = 'Check request options or service endpoint status.';
 
-    if (msg.includes('ENOTFOUND') || diag.dnsLookup?.includes('DNS failed')) {
+    if (msg.includes('ENOTFOUND')) {
       code = 'DNS_LOOKUP_FAILED';
       suggestion = 'DNS resolution failed. Verify your network connection and base URL.';
     } else if (msg.includes('ECONNREFUSED')) {

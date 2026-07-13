@@ -108,11 +108,16 @@ export type StreamEvent =
 
 export type AgentEvent =
   | { type: 'text_delta'; delta: string }
-  | { type: 'tool_start'; name: string; argsPreview: string }
-  | { type: 'tool_result'; name: string; success: boolean; summary: string }
-  | { type: 'tool_error'; name: string; message: string }
+  | { type: 'tool_start'; name: string; argsPreview: string; reason?: string }
+  | { type: 'tool_result'; name: string; success: boolean; summary: string; durationMs?: number }
+  | { type: 'tool_error'; name: string; message: string; durationMs?: number }
   | { type: 'fatal_error'; message: string }
-  | { type: 'turn_complete'; turnNumber: number };
+  | { type: 'turn_complete'; turnNumber: number }
+  | { type: 'workflow_started'; plan: string[] }
+  | { type: 'task_started'; taskId: string; description: string }
+  | { type: 'task_completed'; taskId: string; result: string }
+  | { type: 'task_failed'; taskId: string; error: string }
+  | { type: 'workflow_completed'; summary: string };
 
 export interface ProviderConfig {
   apiKey?: string;
@@ -215,6 +220,11 @@ export interface ProviderCapabilities {
   jsonMode: boolean;
   embeddings: boolean;
   modelDiscovery: boolean;
+  // Auth Capabilities
+  browserLogin: boolean;
+  deviceFlow: boolean;
+  apiKeys: boolean;
+  localServer: boolean;
 }
 
 export function createDefaultCapabilities(): ProviderCapabilities {
@@ -228,6 +238,10 @@ export function createDefaultCapabilities(): ProviderCapabilities {
     jsonMode: false,
     embeddings: false,
     modelDiscovery: false,
+    browserLogin: false,
+    deviceFlow: false,
+    apiKeys: true,
+    localServer: false,
   };
 }
 

@@ -18,6 +18,7 @@ export interface InputOptions {
   onCancel?: () => void;
   onCommandPalette?: () => void;
   multiLine?: boolean;
+  isPassword?: boolean;
 }
 
 export class InputHandler {
@@ -94,13 +95,25 @@ export class InputHandler {
         this.applySuggestion();
         return true;
       }
-      if (this.multiLine && this.buffer === '') {
-        const fullInput = this.multiLineBuffer.join('\n');
-        if (fullInput.trim()) {
-          this.history.push(fullInput);
-          this.historyIndex = this.history.length;
-          this.options.onSubmit(fullInput);
-          this.multiLineBuffer = [];
+      if (this.multiLine) {
+        if (ctrl) {
+          this.multiLineBuffer.push(this.buffer);
+          this.buffer = '';
+          this.cursor = 0;
+          const fullInput = this.multiLineBuffer.join('\n');
+          if (fullInput.trim()) {
+            this.history.push(fullInput);
+            this.historyIndex = this.history.length;
+            this.options.onSubmit(fullInput);
+            this.multiLineBuffer = [];
+            this.hideSuggestions();
+          }
+          this.renderInput();
+        } else {
+          this.multiLineBuffer.push(this.buffer);
+          this.buffer = '';
+          this.cursor = 0;
+          this.renderInput();
         }
         return true;
       }
@@ -144,17 +157,26 @@ export class InputHandler {
 
     if (name === 'backspace') {
       if (this.cursor > 0) {
-        this.buffer = this.buffer.slice(0, this.cursor - 1) + this.buffer.slice(this.cursor);
-        this.cursor--;
-        this.onChange();
+
+        const before = Array.from(this.buffer.slice(0, this.cursor));
+        const removed = before.pop();
+        if (removed) {
+          this.cursor -= removed.length;
+          this.buffer = before.join('') + this.buffer.slice(this.cursor + removed.length);
+          this.onChange();
+        }
       }
       return true;
     }
 
     if (name === 'delete') {
       if (this.cursor < this.buffer.length) {
-        this.buffer = this.buffer.slice(0, this.cursor) + this.buffer.slice(this.cursor + 1);
-        this.onChange();
+        const after = Array.from(this.buffer.slice(this.cursor));
+        const removed = after.shift();
+        if (removed) {
+          this.buffer = this.buffer.slice(0, this.cursor) + after.join('');
+          this.onChange();
+        }
       }
       return true;
     }
@@ -231,7 +253,9 @@ export class InputHandler {
           this.cursor = 0;
         }
       } else if (this.cursor > 0) {
-        this.cursor--;
+        const charsBefore = Array.from(this.buffer.slice(0, this.cursor));
+        const lastChar = charsBefore.pop();
+        if (lastChar) this.cursor -= lastChar.length;
       }
       this.renderInput();
       return true;
@@ -248,7 +272,9 @@ export class InputHandler {
           this.cursor = this.buffer.length;
         }
       } else if (this.cursor < this.buffer.length) {
-        this.cursor++;
+        const charsAfter = Array.from(this.buffer.slice(this.cursor));
+        const firstChar = charsAfter.shift();
+        if (firstChar) this.cursor += firstChar.length;
       }
       this.renderInput();
       return true;
@@ -264,7 +290,7 @@ export class InputHandler {
       return true;
     }
 
-    if (!ctrl && !key.meta && name.length === 1) {
+    if (!ctrl && !key.meta && Array.from(name).length === 1) {
       this.buffer = this.buffer.slice(0, this.cursor) + name + this.buffer.slice(this.cursor);
       this.cursor += name.length;
       this.onChange();
@@ -380,9 +406,11 @@ export class InputHandler {
 
     this.tui.cursorTo(0, y);
     if (this.buffer === '') {
-      this.tui.write(`\x1B[2K\r${prompt}\x1B[90mType a request or /help. Ctrl+K for menu.\x1B[39m`);
+      const placeholder = this.options.isPassword ? '' : '\x1B[90mType a request or /help. Ctrl+K for menu.\x1B[39m';
+      this.tui.write(`\x1B[2K\r${prompt}${placeholder}`);
     } else {
-      this.tui.write(`\x1B[2K\r${prompt}${this.buffer}`);
+      const displayBuffer = this.options.isPassword ? '*'.repeat(this.buffer.length) : this.buffer;
+      this.tui.write(`\x1B[2K\r${prompt}${displayBuffer}`);
     }
 
     // Position cursor at the right spot
@@ -393,10 +421,16 @@ export class InputHandler {
   renderSuggestions(): void {
     const cap = getTerminalCapabilities();
     const theme = getTheme();
-    const y = this.tui.height - 2;
-
+    const inputLines = Math.max(1, Math.ceil(stripAnsiLen(this.buffer) / this.tui.width));
     const maxItems = Math.min(this.suggestions.length, 6);
+    const totalLines = maxItems + 1;
+    const y = this.tui.height - inputLines - totalLines;
+
     const lines: string[] = [];
+
+    // Draw border
+    const width = Math.min(cap.width, 80);
+    lines.push(`${theme.dim}${'─'.repeat(width)}${theme.reset}`);
 
     for (let i = 0; i < maxItems; i++) {
       const s = this.suggestions[i]!;
@@ -411,28 +445,25 @@ export class InputHandler {
     }
 
     // Clear and draw suggestion area
-    this.tui.cursorTo(0, y);
-    for (let i = 0; i < maxItems + 1; i++) {
-      this.tui.write('\x1B[2K');
-      if (i < maxItems) this.tui.write('\n');
+    for (let i = 0; i < totalLines; i++) {
+      this.tui.cursorTo(0, y + i);
+      this.tui.write('\x1B[2K' + lines[i]);
     }
-    this.tui.cursorTo(0, y);
+    
+    // Restore cursor position for input
 
-    // Draw border
-    const width = Math.min(cap.width, 80);
-    this.tui.write(`${theme.dim}${'─'.repeat(width)}${theme.reset}\n`);
-
-    for (const line of lines) {
-      this.tui.writeln(line);
-    }
-
-    this.tui.cursorTo(0, y + maxItems + 1);
+    this.renderInput();
   }
 
   clearSuggestionArea(): void {
-    const y = this.tui.height - 2;
-    this.tui.cursorTo(0, y);
-    this.tui.write('\x1B[2K');
+    const inputLines = Math.max(1, Math.ceil(stripAnsiLen(this.buffer) / this.tui.width));
+    // Clear up to 7 lines above the input
+    const maxLines = 7;
+    const y = this.tui.height - inputLines - maxLines;
+    for (let i = 0; i < maxLines; i++) {
+      this.tui.cursorTo(0, y + i);
+      this.tui.write('\x1B[2K');
+    }
   }
 
   clearAll(): void {

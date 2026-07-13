@@ -81,7 +81,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     baseUrl: 'http://localhost:11434/v1',
     requiresApiKey: false,
     hasFreeTier: true,
-    website: 'https://ollama.ai',
+    website: 'https://ollama.com',
     defaultModel: 'codellama',
     supportsStreaming: true,
     supportsToolCalling: true,
@@ -114,7 +114,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     defaultModel: 'meta/llama-3.1-8b-instruct',
     supportsStreaming: true,
     supportsToolCalling: true,
-    docsUrl: 'https://build.nvidia.com/docs',
+    docsUrl: 'https://docs.api.nvidia.com/nim/reference/llm-apis',
     envKey: 'NVIDIA_API_KEY',
   },
   {
@@ -193,9 +193,9 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     description: 'Wafer-scale AI acceleration',
     baseUrl: 'https://api.cerebras.ai/v1',
     requiresApiKey: true,
-    hasFreeTier: false,
+    hasFreeTier: true,
     website: 'https://cerebras.ai',
-    defaultModel: 'llama-3.3-70b',
+    defaultModel: 'llama3.1-8b',
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.cerebras.ai',
@@ -209,7 +209,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     requiresApiKey: true,
     hasFreeTier: false,
     website: 'https://x.ai',
-    defaultModel: 'grok-2',
+    defaultModel: 'grok-2-latest',
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.x.ai',
@@ -228,6 +228,104 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsToolCalling: true,
     docsUrl: 'https://docs.sambanova.ai',
     envKey: 'SAMBANOVA_API_KEY',
+  },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio (Local)',
+    description: 'Run models locally via LM Studio. No API key needed.',
+    baseUrl: 'http://localhost:1234/v1',
+    requiresApiKey: false,
+    hasFreeTier: true,
+    website: 'https://lmstudio.ai',
+    defaultModel: 'local-model',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://lmstudio.ai/docs/local-server',
+    envKey: '',
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    description: 'Mistral Large, Codestral, and open-weight models',
+    baseUrl: 'https://api.mistral.ai/v1',
+    requiresApiKey: true,
+    hasFreeTier: true,
+    website: 'https://mistral.ai',
+    defaultModel: 'mistral-large-latest',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://docs.mistral.ai/api',
+    envKey: 'MISTRAL_API_KEY',
+  },
+  {
+    id: 'cohere',
+    name: 'Cohere',
+    description: 'Command R and Command R+ models',
+    baseUrl: 'https://api.cohere.com/v1',
+    requiresApiKey: true,
+    hasFreeTier: false,
+    website: 'https://cohere.com',
+    defaultModel: 'command-r-plus',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://docs.cohere.com/reference/about',
+    envKey: 'COHERE_API_KEY',
+  },
+  {
+    id: 'github',
+    name: 'GitHub Models',
+    description: 'Models hosted on GitHub (Azure OpenAI)',
+    baseUrl: 'https://models.inference.ai.azure.com',
+    requiresApiKey: true,
+    hasFreeTier: true,
+    website: 'https://github.com/marketplace/models',
+    defaultModel: 'gpt-4o',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://docs.github.com/en/github-models',
+    envKey: 'GITHUB_TOKEN',
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    description: 'Serverless Inference API',
+    baseUrl: 'https://api-inference.huggingface.co/v1',
+    requiresApiKey: true,
+    hasFreeTier: true,
+    website: 'https://huggingface.co',
+    defaultModel: 'meta-llama/Meta-Llama-3-8B-Instruct',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://huggingface.co/docs/api-inference',
+    envKey: 'HF_TOKEN',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    description: 'DeepSeek Coder and Chat models',
+    baseUrl: 'https://api.deepseek.com/v1',
+    requiresApiKey: true,
+    hasFreeTier: false,
+    website: 'https://deepseek.com',
+    defaultModel: 'deepseek-chat',
+    supportsStreaming: true,
+    supportsToolCalling: true,
+    docsUrl: 'https://platform.deepseek.com/api-docs',
+    envKey: 'DEEPSEEK_API_KEY',
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity',
+    description: 'Sonar models with search capabilities',
+    baseUrl: 'https://api.perplexity.ai',
+    requiresApiKey: true,
+    hasFreeTier: false,
+    website: 'https://perplexity.ai',
+    defaultModel: 'llama-3.1-sonar-large-128k-online',
+    supportsStreaming: true,
+    supportsToolCalling: false,
+    docsUrl: 'https://docs.perplexity.ai',
+    envKey: 'PERPLEXITY_API_KEY',
   },
   {
     id: 'novita',
@@ -359,23 +457,37 @@ export class ProviderRegistry {
 
   registerCustom(definition: ProviderDefinition): void {
     if (!definition.id || !definition.id.trim()) {
-      throw new Error('Custom provider must have a non-empty id.');
+      throw new Error(
+        `Failed to register custom provider.\n` +
+        `This happens because the provider definition is missing an 'id'.\n\n` +
+        `To fix this, edit your config file and add an 'id' field to the provider.\n\n` +
+        `Next step: Run \`/config path\` to locate and edit your config file.`
+      );
     }
     const id = definition.id.trim();
     if (this.providers.has(id)) {
       throw new Error(
-        `Cannot register custom provider '${id}': a built-in provider with this id already exists. ` +
-        `Choose a different name.`,
+        `Cannot register custom provider '${id}'.\n` +
+        `This happens because a built-in provider with this name already exists.\n\n` +
+        `To fix this, choose a different name for your custom provider in your config file.\n\n` +
+        `Next step: Run \`/config path\` to locate and edit your config file.`
       );
     }
     if (this.customProviders.has(id)) {
       throw new Error(
-        `Duplicate custom provider: '${id}' is already registered. ` +
-        `Remove it first or choose a different name.`,
+        `Duplicate custom provider '${id}'.\n` +
+        `This happens because multiple custom providers share the same 'id'.\n\n` +
+        `To fix this, ensure each custom provider in your config file has a unique 'id'.\n\n` +
+        `Next step: Run \`/config path\` to locate and edit your config file.`
       );
     }
     if (!definition.baseUrl || !definition.baseUrl.trim()) {
-      throw new Error(`Custom provider '${id}' must have a non-empty baseUrl.`);
+      throw new Error(
+        `The baseUrl for custom provider '${id}' is missing.\n` +
+        `This happens because the provider definition requires a valid 'baseUrl' to send requests.\n\n` +
+        `To fix this, add a 'baseUrl' starting with http:// or https:// to your provider config.\n\n` +
+        `Next step: Run \`/config path\` to locate and edit your config file.`
+      );
     }
     this.customProviders.set(id, definition);
   }
@@ -427,6 +539,10 @@ export class ProviderRegistry {
         jsonMode: false,
         embeddings: false,
         modelDiscovery: false,
+        browserLogin: false,
+        deviceFlow: false,
+        apiKeys: builtin.requiresApiKey,
+        localServer: !builtin.requiresApiKey && builtin.hasFreeTier && builtin.id === 'ollama',
       };
     }
 
@@ -442,6 +558,10 @@ export class ProviderRegistry {
         jsonMode: false,
         embeddings: false,
         modelDiscovery: false,
+        browserLogin: false,
+        deviceFlow: false,
+        apiKeys: custom.requiresApiKey ?? !!custom.apiKey,
+        localServer: false,
         ...custom.capabilities,
       };
     }
@@ -456,6 +576,10 @@ export class ProviderRegistry {
       jsonMode: false,
       embeddings: false,
       modelDiscovery: false,
+      browserLogin: false,
+      deviceFlow: false,
+      apiKeys: true,
+      localServer: false,
     };
   }
 

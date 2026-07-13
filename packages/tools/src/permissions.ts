@@ -52,13 +52,13 @@ export class PermissionChecker {
       };
       const dir = path.dirname(this.storePath);
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.storePath, JSON.stringify(store, null, 2), 'utf-8');
+      fs.writeFileSync(this.storePath, JSON.stringify(store, null, 2), { encoding: 'utf-8', mode: 0o600 });
     } catch {
       // ignore
     }
   }
 
-  check(toolName: string, _args: Record<string, unknown>): boolean {
+  async check(toolName: string, _args: Record<string, unknown>, promptApproval?: (toolName: string, args: Record<string, unknown>, description: string) => Promise<boolean>): Promise<boolean> {
     if (SAFE_TOOLS.includes(toolName)) {
       return true;
     }
@@ -71,6 +71,9 @@ export class PermissionChecker {
     if (level === 'always_allow') return true;
     if (level === 'deny') return false;
 
+    if (promptApproval) {
+      return await promptApproval(toolName, _args, this.describeAction(toolName, _args));
+    }
     return this.promptUser(toolName, _args);
   }
 

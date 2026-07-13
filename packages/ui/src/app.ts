@@ -6,8 +6,9 @@ import { Completer } from './completer.js';
 import { WorkflowTracker } from './workflow.js';
 import { renderMarkdown } from './markdown.js';
 import { getTheme } from './theme.js';
-import { getTerminalCapabilities } from './terminal.js';
+
 import { CommandPalette } from './palette.js';
+import * as readline from 'node:readline';
 
 export interface TuiAppOptions {
   provider: string;
@@ -36,6 +37,9 @@ export class TuiApp {
   private tokenPct = 0;
   private palette: CommandPalette;
   private renderInterval: NodeJS.Timeout | null = null;
+
+  private streamingActive = false;
+  private streamingText = '';
 
   constructor(options: TuiAppOptions) {
     this.options = options;
@@ -127,14 +131,63 @@ export class TuiApp {
   stop(): void {
     if (this.renderInterval) {
       clearInterval(this.renderInterval);
+    }
+    this.tui.stopInput();
+    this.tui.showCursor();
+    this.tui.disableRawMode();
+    this.tui.exitAltScreen();
+    this.tui.destroy();
+  }
+
+  suspend(): void {
+    if (this.renderInterval) {
+      clearInterval(this.renderInterval);
       this.renderInterval = null;
     }
     this.tui.stopInput();
     this.tui.showCursor();
-    this.tui.destroy();
+    this.tui.disableRawMode();
+    this.tui.exitAltScreen();
+  }
+
+  resume(): void {
+    this.tui.enterAltScreen();
+    this.tui.hideCursor();
+    this.tui.enableRawMode();
+    this.tui.startInput();
+    
+    // Start animation loop for spinners
+    this.renderInterval = setInterval(() => {
+      if (this.workflow.getActiveStep()) {
+        this.requestRender();
+      }
+    }, 100);
+    
+    this.requestRender();
+  }
+
+  async requestApproval(toolName: string, args: Record<string, unknown>, description: string): Promise<boolean> {
+    this.suspend();
+    console.error('\n\x1B[33m\u26A0 Action Required\x1B[39m');
+    console.error(`  Tool: \x1B[36m${toolName}\x1B[39m`);
+    console.error(`  Action: ${description}\n`);
+
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      rl.question('  Allow execution? (y/N): ', (answer: string) => {
+        rl.close();
+        this.resume();
+        const ans = answer.trim().toLowerCase();
+        resolve(ans === 'y' || ans === 'yes');
+      });
+    });
   }
 
   addToConversation(text: string, role?: 'user' | 'assistant' | 'system'): void {
+    this.streamToolBreak();
     const theme = getTheme();
     let formatted = text;
 
@@ -147,16 +200,26 @@ export class TuiApp {
     this.requestRender();
   }
 
-  appendToLast(text: string): void {
-    if (this.conversationBuffer.length > 0) {
-      this.conversationBuffer[this.conversationBuffer.length - 1] += text;
+  streamTextDelta(delta: string): void {
+    if (!this.streamingActive) {
+      this.streamingActive = true;
+      this.streamingText = delta;
+      this.conversationBuffer.push(renderMarkdown(this.streamingText));
     } else {
-      this.conversationBuffer.push(text);
+      this.streamingText += delta;
+      this.conversationBuffer[this.conversationBuffer.length - 1] = renderMarkdown(this.streamingText);
     }
+    this.scrollOffset = 0;
     this.requestRender();
   }
 
+  streamToolBreak(): void {
+    this.streamingActive = false;
+    this.streamingText = '';
+  }
+
   addMarkdown(text: string): void {
+    this.streamToolBreak();
     const rendered = renderMarkdown(text);
     this.conversationBuffer.push(rendered);
     this.scrollOffset = 0;

@@ -55,9 +55,18 @@ librecode "explain this" # single prompt
 ### From npm
 
 ```bash
-npm install -g librecode
+npm install -g librecode@beta
 librecode
 ```
+
+## Migration from Alpha to v0.4.0-Beta
+
+If you are upgrading from an older Alpha version:
+
+1. **New Config Structure**: LibreCode's configuration has migrated to a centralized manager. Your old config will be safely ignored, and upon first run, the interactive `/setup` wizard will auto-generate your `.librecode.json` file.
+2. **Commands**: Several prototype CLI commands (`/git`, `/permissions`, `/tools`) have been temporarily disabled for stability and will return in upcoming releases.
+3. **Aliases**: You can now use `/models` as an alias for `/model`, and `/t` or `/token` as aliases for `/tokens`.
+4. **Known Issues**: For detailed limitations (like Windows cmd.exe support), please see the [KNOWN_ISSUES.md](./KNOWN_ISSUES.md).
 
 ## Quick Start
 

@@ -1,6 +1,6 @@
 {
   "name": "librecode-ui",
-  "version": "0.3.5",
+  "version": "0.4.0-beta.1",
   "description": "Terminal UI for librecode",
   "license": "MIT",
   "publishConfig": {

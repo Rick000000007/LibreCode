@@ -9,7 +9,7 @@ import {
 } from '../terminal.js';
 import { renderMarkdown, renderInlineText, parseMarkdown } from '../markdown.js';
 import { getTheme, resetTheme } from '../theme.js';
-import { Logger, getLogger, setLogger } from '../logger.js';
+import { getLogger, setLogger } from '../logger.js';
 import { WorkflowTracker } from '../workflow.js';
 
 describe('UI Package - Terminal Utilities', () => {

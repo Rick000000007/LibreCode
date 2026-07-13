@@ -43,7 +43,7 @@ export class ConfigurationManager {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
   getProvider(name: string): ProviderEntry | undefined {

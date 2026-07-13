@@ -1,6 +1,6 @@
 {
   "name": "librecode-monorepo",
-  "version": "0.1.0",
+  "version": "0.4.0-beta.1",
   "private": true,
   "keywords": [
     "ai",
@@ -22,7 +22,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "build:watch": "pnpm -r --parallel build:watch",
-    "clean": "pnpm -r clean",
+    "clean": "pnpm -r clean && find . -name \"*.tsbuildinfo\" -type f -delete",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write \"packages/*/src/**/*.ts\"",

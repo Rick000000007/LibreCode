@@ -11,9 +11,30 @@ const helpCommand: Command = {
     examples: ['/help', '/help doctor'],
   },
   execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.openCommandPalette();
+    if (!ctx.tuiApp) return;
+
+    if (ctx.args.length > 0) {
+      const topic = ctx.args[0]!.toLowerCase();
+      let found = false;
+      for (const cmd of globalCommandRegistry.getAllCommands()) {
+        if (cmd.metadata.name === topic || cmd.metadata.aliases?.includes(topic)) {
+          ctx.tuiApp!.addToConversation(
+            `\x1B[36m/${cmd.metadata.name}\x1B[39m - ${cmd.metadata.description}\n` +
+            `\x1B[90mUsage: \x1B[39m${cmd.metadata.usage}\n` +
+            `\x1B[90mExamples:\n  \x1B[39m${cmd.metadata.examples.join('\n  ')}`,
+            'system'
+          );
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        ctx.tuiApp!.addToConversation(`\x1B[31mUnknown command: /${topic}\x1B[39m\n\x1B[90mRun /help to see a list of available commands.\x1B[39m`, 'system');
+      }
+      return;
     }
+
+    ctx.tuiApp.openCommandPalette();
   },
 };
 
@@ -149,62 +170,81 @@ const providerCommand: Command = {
     usage: '/provider [list|current|switch|login|logout|test|models]',
     examples: ['/provider list', '/provider switch openai', '/provider test gemini'],
   },
-  execute(ctx: CommandContext) {
+  async execute(ctx: CommandContext) {
     if (!ctx.tuiApp || !ctx.providerManager) return;
     
-    const registry = ctx.providerManager['registry']; 
-    const config = ctx.providerManager['configManager']?.load();
+    const registry = ctx.providerManager.getRegistry(); 
+    const config = ctx.providerManager.getConfig();
     if (!config) return;
 
-    // Fast path: if argument provided, switch immediately
     if (ctx.args.length > 0) {
       const target = ctx.args[0]!.toLowerCase();
       
-      if (target === 'free' || target === 'switch' && ctx.args[1] === 'free') {
+      if (target === 'free' || (target === 'switch' && ctx.args[1] === 'free')) {
         config.defaultProvider = 'free';
-        ctx.providerManager!['configManager']?.save(config);
+        ctx.providerManager.saveConfig(config);
         ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33mfree\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
         return;
       }
 
       const id = target === 'switch' ? ctx.args[1]?.toLowerCase() : target;
-      if (id && config.providers && config.providers[id]) {
+      if (id && registry.exists(id)) {
         config.defaultProvider = id;
-        ctx.providerManager!['configManager']?.save(config);
+        ctx.providerManager.saveConfig(config);
         ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33m${id}\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
         return;
       } else if (id) {
-        ctx.tuiApp!.addToConversation(`\x1B[31mProvider '${id}' is not configured. Configured providers: ${Object.keys(config.providers || {}).join(', ')}\x1B[39m`, 'system');
+        ctx.tuiApp!.addToConversation(`\x1B[31mCould not find provider '${id}'.\x1B[39m\n\x1B[90mRun /setup to configure a new provider, or /provider to list available providers.\x1B[39m`, 'system');
         return;
       }
     }
 
     const items: import('librecode-ui').PaletteItem[] = [];
+    const allProviders = registry.all();
 
-    // Add free mode explicitly
-    items.push({
-      id: 'free',
-      category: 'System',
-      label: 'Free Mode (Auto)',
-      description: 'Automatically route to the best free models available',
-      action: async () => {
-        config.defaultProvider = 'free';
-        ctx.providerManager!['configManager']?.save(config);
-        ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33mfree\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
-      }
-    });
-
-    for (const [id, entry] of Object.entries(config.providers || {}) as [string, any][]) {
-      if (!entry || !entry.enabled) continue;
+    for (const meta of allProviders) {
+      const entry = config.providers[meta.id];
+      const isConfigured = entry?.enabled ?? false;
+      const isSelected = config.defaultProvider === meta.id;
+      
+      const caps = registry.deriveCapabilities(meta.id);
+      let authType = meta.requiresApiKey ? 'API Key' : 'Local';
+      if (caps.browserLogin) authType = 'Browser Login';
+      if (caps.deviceFlow) authType = 'Device Flow';
+      if (caps.localServer) authType = 'Local';
+      if (meta.id === 'free') authType = 'None';
+                     
+      const statusStr = isConfigured ? '\x1B[32mConfigured\x1B[39m' : '\x1B[90mNot Configured\x1B[39m';
+      const health = ctx.providerManager.getProviderHealthStatus(meta.id) || 'unknown';
+      const selectionStr = isSelected ? ' (Current)' : '';
+      
+      const modelsInfo = caps.modelDiscovery ? 'Auto-discovery' : meta.defaultModel;
+      const description = `Status: ${statusStr} | Auth: ${authType} | Health: ${health} | Models: ${modelsInfo}`;
+      
       items.push({
-        id,
-        category: 'Configured Providers',
-        label: id,
-        description: `Switch to ${id}`,
+        id: meta.id,
+        category: isConfigured ? 'Configured Providers' : 'Available Providers',
+        label: `${meta.name}${selectionStr}`,
+        description,
         action: async () => {
-          config.defaultProvider = id;
-          ctx.providerManager!['configManager']?.save(config);
-          ctx.tuiApp!.addToConversation(`\x1B[90mChanged default provider to \x1B[33m${id}\x1B[39m. Restart required to fully apply.\x1B[39m`, 'system');
+          if (!isConfigured && meta.id !== 'free') {
+            ctx.tuiApp!.suspend();
+            const { SetupWizard, ProviderRegistry, ConfigurationManager } = await import('librecode-providers');
+            const wizard = new SetupWizard(new ProviderRegistry(), new ConfigurationManager());
+            await wizard.configureProviderInteractive(meta.id);
+            await ctx.providerManager!.initialize();
+            ctx.tuiApp!.resume();
+          } else {
+            const config = ctx.providerManager!.getConfig();
+            config.defaultProvider = meta.id;
+            ctx.providerManager!.saveConfig(config);
+            await ctx.providerManager!.initialize();
+            ctx.tuiApp!.addToConversation(`\x1B[90mSwitched default provider to \x1B[33m${meta.name}\x1B[39m.\x1B[39m`, 'system');
+            const newActive = ctx.providerManager!.getActiveProvider();
+            if (newActive) {
+               ctx.tuiApp!.setProviderInfo(newActive.id, newActive.model);
+            }
+          }
         }
       });
     }
@@ -219,79 +259,69 @@ const providerCommand: Command = {
 const modelCommand: Command = {
   metadata: {
     name: 'model',
-    description: 'Switch model (managed by provider system)',
+    description: 'Switch or list models',
     usage: '/model <name>',
-    examples: ['/model gpt-4o'],
+    examples: ['/model gpt-4o', '/model', '/models'],
+    aliases: ['models'],
   },
   async execute(ctx: CommandContext) {
-    if (!ctx.tuiApp) return;
+    if (!ctx.tuiApp || !ctx.providerManager) return;
+
+    const activeInfo = ctx.providerManager.getActiveProvider();
+    if (!activeInfo) {
+      ctx.tuiApp.addToConversation('\x1B[90mNo active provider configured. Use /setup or /provider.\x1B[39m', 'system');
+      return;
+    }
 
     const modelArg = ctx.args.join(' ');
-    if (!modelArg) {
-      const active = ctx.providerManager?.getActiveProvider();
-      if (active?.type === 'free') {
-        const fp = ctx.providerManager?.getFreeProvider();
-        if (fp) {
-          const models = await ctx.providerManager!.listFreeModels();
-          const items = models.map((m) => ({
-            id: m.id,
-            category: 'Free Models',
-            label: m.id,
-            description: `Switch to ${m.id}`,
-            action: () => {
-              fp.setModel(m.id);
-              const mi = fp.getModel();
-              ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
-              ctx.tuiApp!.setProviderInfo('Free', mi.name);
-            }
-          }));
-          const aliases = fp.getAliases();
-          for (const [alias, m] of Object.entries(aliases)) {
-            items.unshift({
-              id: alias,
-              category: 'Aliases',
-              label: alias,
-              description: `Alias for ${m || 'auto-best'}`,
-              action: () => {
-                fp.setModel(alias);
-                const mi = fp.getModel();
-                ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
-                ctx.tuiApp!.setProviderInfo('Free', mi.name);
-              }
-            });
+    
+    if (modelArg) {
+       const provider = ctx.providerManager.getProvider();
+       provider.setModel(modelArg);
+        if (activeInfo.id !== 'free') {
+          const config = ctx.providerManager.getConfig();
+          if (config.providers[activeInfo.id]) {
+             config.providers[activeInfo.id]!.defaultModel = modelArg;
+             ctx.providerManager.saveConfig(config);
           }
-          ctx.tuiApp.openCommandPalette(items);
-        }
-      } else if (active) {
-        ctx.tuiApp.addToConversation('\x1B[90mModel switching via menu is currently only supported for the free tier. Edit ~/.rcode.toml to change your premium provider model.\x1B[39m', 'system');
-      } else {
-        ctx.tuiApp.addToConversation('\x1B[90mUse /provider switch <name> to change provider.\x1B[39m', 'system');
-      }
-    } else {
-      const fp = ctx.providerManager?.getFreeProvider();
-      if (fp && (modelArg === 'auto' || modelArg.endsWith('-free') || modelArg === 'free')) {
-        fp.setModel(modelArg);
-        const mi = fp.getModel();
-        ctx.tuiApp.addToConversation(`\x1B[90mSwitched to free model: \x1B[33m${mi.name}\x1B[39m`, 'system');
-      } else {
-        ctx.tuiApp.addToConversation('\x1B[90mUse /provider switch to change providers, or /model auto for free.\x1B[39m', 'system');
-      }
+       }
+       ctx.tuiApp!.addToConversation(`\x1B[90mSwitched model to \x1B[33m${modelArg}\x1B[39m\x1B[39m`, 'system');
+       ctx.tuiApp!.setProviderInfo(activeInfo.id, modelArg);
+       return;
     }
-  },
-};
 
-// 10. permissions
-const permissionsCommand: Command = {
-  metadata: {
-    name: 'permissions',
-    description: 'Manage tool permissions',
-    usage: '/permissions [list|allow|deny|reset] [tool]',
-    examples: ['/permissions list', '/permissions allow write_file', '/permissions deny run_command'],
-    aliases: ['perms'],
-  },
-  execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[90mUse /permissions list|allow|deny|reset <tool>\x1B[39m', 'system');
+    const provider = ctx.providerManager.getProvider();
+    
+    ctx.tuiApp.addToConversation('\x1B[90mDiscovering available models...\x1B[39m', 'system');
+    ctx.tuiApp.render();
+    try {
+      const models = await provider.listModels();
+      if (models.length === 0) {
+        ctx.tuiApp.addToConversation('\x1B[33mNo models discovered. Provider may not support discovery or needs to be configured.\x1B[39m', 'system');
+        return;
+      }
+      
+      const items = models.map(m => ({
+        id: m.id,
+        category: 'Available Models',
+        label: m.name || m.id,
+        description: `Context: ${m.contextWindow.toLocaleString()}`,
+        action: () => {
+          provider.setModel(m.id);
+          if (activeInfo.id !== 'free') {
+             const config = ctx.providerManager!.getConfig();
+             if (config.providers[activeInfo.id]) {
+                config.providers[activeInfo.id]!.defaultModel = m.id;
+                ctx.providerManager!.saveConfig(config);
+             }
+          }
+          ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to model \x1B[33m${m.name || m.id}\x1B[39m.\x1B[39m`, 'system');
+          ctx.tuiApp!.setProviderInfo(activeInfo.id, m.name || m.id);
+        }
+      }));
+      ctx.tuiApp.openCommandPalette(items);
+    } catch (err) {
+       ctx.tuiApp.addToConversation('\x1B[31mFailed to fetch models: ' + String(err) + '\x1B[39m\n\x1B[90mEnsure your API key is valid and your internet connection is active.\x1B[39m', 'system');
     }
   },
 };
@@ -347,47 +377,25 @@ const sessionCommand: Command = {
   },
 };
 
-// 14. git
-const gitCommand: Command = {
-  metadata: {
-    name: 'git',
-    description: 'Git operations',
-    usage: '/git <command>',
-    examples: ['/git status', '/git diff', '/git log --oneline -5'],
-  },
-  execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[90mGit operations are handled by the AI agent.\x1B[39m', 'system');
-    }
-  },
-};
-
 // 15. config
 const configCommand: Command = {
   metadata: {
     name: 'config',
-    description: 'View or edit configuration',
+    description: 'View configuration file location',
     usage: '/config [path|show]',
-    examples: ['/config show', '/config path'],
+    examples: ['/config', '/config path'],
   },
   execute(ctx: CommandContext) {
     if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[90mConfig is managed automatically.\x1B[39m', 'system');
-    }
-  },
-};
-
-// 16. tools
-const toolsCommand: Command = {
-  metadata: {
-    name: 'tools',
-    description: 'List available tools',
-    usage: '/tools',
-    examples: ['/tools'],
-  },
-  execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[90mAll tools are pre-configured. Use /permissions to manage.\x1B[39m', 'system');
+      const { ConfigurationManager } = require('librecode-providers');
+      const configMgr = new ConfigurationManager();
+      const configPath = configMgr.configFilePath();
+      const isConfigured = configMgr.isConfigured();
+      ctx.tuiApp.addToConversation(
+        `\x1B[90mConfig file: ${configPath}\x1B[39m\n` +
+        `\x1B[90mStatus: ${isConfigured ? '\x1B[32mExists\x1B[39m' : '\x1B[33mNot created yet\x1B[39m'}\x1B[39m`,
+        'system',
+      );
     }
   },
 };
@@ -418,7 +426,14 @@ const historyCommand: Command = {
   },
   execute(ctx: CommandContext) {
     if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[90mHistory is managed in the agent context.\x1B[39m', 'system');
+      const [used, max] = ctx.agent.contextUsage();
+      const turns = ctx.agent.tokenUsage().totalTokens;
+      ctx.tuiApp.addToConversation(
+        `\x1B[90mConversation History\x1B[39m\n` +
+        `\x1B[90m  Context: ${used.toLocaleString()} / ${max.toLocaleString()} tokens\x1B[39m\n` +
+        `\x1B[90m  Total tokens used: ${turns.toLocaleString()}\x1B[39m`,
+        'system',
+      );
     }
   },
 };
@@ -431,9 +446,25 @@ const setupCommand: Command = {
     usage: '/setup',
     examples: ['/setup'],
   },
-  execute(ctx: CommandContext) {
-    if (ctx.tuiApp) {
-      ctx.tuiApp.addToConversation('\x1B[33mTo run the interactive setup wizard, exit LibreCode (/exit) and run `librecode setup` in your terminal.\x1B[39m', 'system');
+  async execute(ctx: CommandContext) {
+    if (ctx.tuiApp && ctx.providerManager) {
+      ctx.tuiApp.suspend();
+      
+      try {
+        const { SetupWizard, ProviderRegistry, ConfigurationManager } = await import('librecode-providers');
+        const wizard = new SetupWizard(new ProviderRegistry(), new ConfigurationManager());
+        await wizard.run();
+        
+        // Re-initialize to apply new settings
+        await ctx.providerManager.initialize();
+      } finally {
+        ctx.tuiApp.resume();
+      }
+      
+      const active = ctx.providerManager.getActiveProvider();
+      if (active) {
+        ctx.tuiApp.addToConversation(`\x1B[32mSuccessfully configured and switched to ${active.id}.\x1B[39m`, 'system');
+      }
     }
   },
 };
@@ -448,13 +479,50 @@ globalCommandRegistry.register(costCommand);
 globalCommandRegistry.register(doctorCommand);
 globalCommandRegistry.register(providerCommand);
 globalCommandRegistry.register(modelCommand);
-globalCommandRegistry.register(permissionsCommand);
 globalCommandRegistry.register(compactCommand);
 globalCommandRegistry.register(workspaceCommand);
 globalCommandRegistry.register(sessionCommand);
-globalCommandRegistry.register(gitCommand);
 globalCommandRegistry.register(configCommand);
-globalCommandRegistry.register(toolsCommand);
 globalCommandRegistry.register(logsCommand);
 globalCommandRegistry.register(historyCommand);
 globalCommandRegistry.register(setupCommand);
+
+const repoCommands = [
+  { name: 'analyze', desc: 'Analyze the repository structure and purpose', prompt: 'Please analyze this repository, explain its purpose, and summarize its main components.' },
+  { name: 'architecture', desc: 'Explain the repository architecture', prompt: 'Explain the high-level architecture of this repository, including key directories and data flow.' },
+  { name: 'dependencies', desc: 'List main dependencies', prompt: 'What are the main dependencies and libraries used in this project? Explain what each is used for.' },
+  { name: 'tests', desc: 'Find and summarize tests', prompt: 'Where are the tests located? How are they structured, and what testing frameworks are used?' },
+  { name: 'todos', desc: 'Find TODOs in the codebase', prompt: 'Search the codebase for TODO, FIXME, or pending tasks and summarize them.' },
+  { name: 'modules', desc: 'List key modules', prompt: 'What are the key modules or packages in this repository? Briefly explain each.' },
+  { name: 'search', desc: 'Search the codebase for a term', prompt: 'Search the codebase for: ' },
+  { name: 'explain', desc: 'Explain a specific file or concept', prompt: 'Please explain the following: ' },
+];
+
+for (const cmd of repoCommands) {
+  globalCommandRegistry.register({
+    metadata: {
+      name: cmd.name,
+      description: cmd.desc,
+      usage: `/${cmd.name} [args]`,
+      examples: [`/${cmd.name}`],
+    },
+    execute(ctx: CommandContext) {
+      if (ctx.tuiApp) {
+        // We simulate sending a message by calling onSubmit or similar.
+        // Wait, TuiApp doesn't expose onSubmit. But we can trigger the agent via the CLI index.ts by returning something or emitting an event.
+        // For now, we will add the message to the input handler and submit it.
+        const input = ctx.tuiApp.getInput();
+        if (input) {
+           const fullPrompt = cmd.prompt + ctx.args.join(' ');
+           // Hack: simulate user typing and pressing enter
+           ctx.tuiApp.addToConversation(fullPrompt, 'user');
+           // The command framework doesn't support async agent triggering directly from here unless we pass it.
+           // Since we can't easily trigger the workflow engine from here without a circular dependency, 
+           // we'll instruct the user to press enter.
+           ctx.tuiApp.addToConversation(`\x1B[90m(Press UP arrow to retrieve the prompt and press ENTER to run it)\x1B[39m`, 'system');
+           input.setBuffer(fullPrompt);
+        }
+      }
+    }
+  });
+}

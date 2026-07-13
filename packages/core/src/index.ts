@@ -12,6 +12,8 @@ import { formatArgsPreview, countMessagesTokens } from 'librecode-utils';
 
 export { generateSystemPrompt } from './prompt.js';
 export { RepoMapper } from './repo_map.js';
+export { WorkflowEngine } from './workflow/engine.js';
+export { PlanTasksTool, CompleteTaskTool } from './workflow/tools.js';
 
 export class Agent {
   ProviderName: string;
@@ -81,6 +83,7 @@ export class Agent {
   async runTurnStreaming(
     userInput: string,
     onEvent: (event: AgentEvent) => void,
+    onApproval?: (toolName: string, args: Record<string, unknown>, description: string) => Promise<boolean>,
   ): Promise<string> {
     this.messages.push({ role: 'user', content: userInput });
 
@@ -176,6 +179,7 @@ export class Agent {
       const toolResults = await this.executeToolsWithEvents(
         toolCalls,
         onEvent,
+        onApproval,
       );
 
       for (const [id, result] of toolResults) {
@@ -190,7 +194,10 @@ export class Agent {
     );
   }
 
-  async runTurn(userInput: string): Promise<string> {
+  async runTurn(
+    userInput: string,
+    onApproval?: (toolName: string, args: Record<string, unknown>, description: string) => Promise<boolean>
+  ): Promise<string> {
     this.messages.push({ role: 'user', content: userInput });
 
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
@@ -241,7 +248,7 @@ export class Agent {
         tool_calls: response.toolCalls,
       });
 
-      const toolResults = await this.executeToolsParallel(response.toolCalls);
+      const toolResults = await this.executeToolsParallel(response.toolCalls, onApproval);
 
       for (const [id, result] of toolResults) {
         this.messages.push({ role: 'tool', content: result, tool_call_id: id });
@@ -256,6 +263,7 @@ export class Agent {
   private async executeToolsWithEvents(
     toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>,
     onEvent: (event: AgentEvent) => void,
+    onApproval?: (toolName: string, args: Record<string, unknown>, description: string) => Promise<boolean>,
   ): Promise<Array<[string, string]>> {
     const results: Array<[string, string]> = [];
 
@@ -271,7 +279,7 @@ export class Agent {
       const argsPreview = formatArgsPreview(toolName, args);
       onEvent({ type: 'tool_start', name: toolName, argsPreview });
 
-      const permitted = this.permissions.check(toolName, args);
+      const permitted = await this.permissions.check(toolName, args, onApproval);
 
       if (!permitted) {
         const msg = `Permission denied for tool: ${toolName}`;
@@ -310,6 +318,7 @@ export class Agent {
 
   private async executeToolsParallel(
     toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>,
+    onApproval?: (toolName: string, args: Record<string, unknown>, description: string) => Promise<boolean>
   ): Promise<Array<[string, string]>> {
     const results: Array<[string, string]> = [];
 
@@ -322,7 +331,7 @@ export class Agent {
         args = {};
       }
 
-      const permitted = this.permissions.check(toolName, args);
+      const permitted = await this.permissions.check(toolName, args, onApproval);
 
       if (!permitted) {
         results.push([tc.id, `Permission denied for tool: ${toolName}`]);

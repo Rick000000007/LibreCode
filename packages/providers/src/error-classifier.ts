@@ -33,7 +33,12 @@ export function classifyError(status: number, body: string): string {
 }
 
 export function isNetworkError(err: Error): boolean {
-  const msg = err.message.toLowerCase();
+  const cause = (err as any).cause;
+  let extraInfo = cause instanceof Error ? `${cause.message} ${(cause as any).code || ''}` : String(cause || '');
+  if (cause && Array.isArray(cause.errors)) {
+     extraInfo += ' ' + cause.errors.map((e: any) => `${e.message} ${e.code}`).join(' ');
+  }
+  const msg = `${err.message} ${extraInfo}`.toLowerCase();
   return (
     msg.includes('econnrefused') ||
     msg.includes('econnreset') ||
@@ -43,12 +48,14 @@ export function isNetworkError(err: Error): boolean {
     msg.includes('network') ||
     msg.includes('timeout') ||
     msg.includes('dns') ||
-    msg.includes('enotfound')
+    msg.includes('enotfound') ||
+    msg.includes('fetch failed')
   );
 }
 
 export function isAuthError(err: Error): boolean {
-  const msg = err.message.toLowerCase();
+  const cause = (err as any).cause;
+  const msg = `${err.message} ${cause instanceof Error ? cause.message : String(cause || '')}`.toLowerCase();
   return (
     msg.includes('401') ||
     msg.includes('unauthorized') ||
@@ -59,6 +66,7 @@ export function isAuthError(err: Error): boolean {
 }
 
 export function isRateLimitError(err: Error): boolean {
-  const msg = err.message.toLowerCase();
+  const cause = (err as any).cause;
+  const msg = `${err.message} ${cause instanceof Error ? cause.message : String(cause || '')}`.toLowerCase();
   return msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests');
 }

@@ -1,5 +1,5 @@
 import * as tty from 'node:tty';
-import { getTerminalCapabilities, type TerminalCapabilities } from './terminal.js';
+import { getTerminalCapabilities, resetTerminalCache, type TerminalCapabilities } from './terminal.js';
 
 export interface ScreenRegion {
   x: number;
@@ -40,6 +40,18 @@ export class TuiEngine {
 
     if (options?.onKey) this.keyHandlers.push(options.onKey);
     if (options?.onResize) this.resizeHandler = options.onResize;
+
+    if (this.stdout.isTTY) {
+      this.stdout.on('resize', this.handleResize.bind(this));
+    }
+  }
+
+  private handleResize(): void {
+    resetTerminalCache();
+    this.cap = getTerminalCapabilities();
+    if (this.resizeHandler) {
+      this.resizeHandler(this.cap.width, this.cap.height);
+    }
   }
 
   get width(): number {
@@ -234,7 +246,15 @@ export class TuiEngine {
           sequence: `\x1B${altChar}`,
         };
       }
-      return null;
+      
+      this.inputBuffer = '';
+      return {
+        name: 'escape',
+        ctrl: false,
+        meta: false,
+        shift: false,
+        sequence: '\x1B',
+      };
     }
 
     if (code === 0x7f) {
@@ -261,6 +281,7 @@ export class TuiEngine {
 
     if (code < 32) {
       this.inputBuffer = this.inputBuffer.slice(charLen);
+      const isNamed = [0x09, 0x0a, 0x0d, 0x08, 0x1b].includes(code);
       const name = code === 0x09 ? 'tab'
         : code === 0x0a ? 'enter'
         : code === 0x0d ? 'enter'
@@ -269,7 +290,7 @@ export class TuiEngine {
         : String.fromCharCode(code + 64).toLowerCase();
       return {
         name,
-        ctrl: true,
+        ctrl: !isNamed,
         meta: false,
         shift: false,
         sequence: ch,
@@ -293,9 +314,9 @@ export class TuiEngine {
       const c = this.inputBuffer[i]!;
       const cc = c.charCodeAt(0);
       if (cc >= 0x40 && cc <= 0x7e) {
-        const seq = this.inputBuffer.slice(0, i + 1);
+
         this.inputBuffer = this.inputBuffer.slice(i + 1);
-        return this.mapCsi(seq.charAt(2)!, params);
+        return this.mapCsi(c, params);
       }
       if (cc >= 0x30 && cc <= 0x3f) {
         params += c;
@@ -320,9 +341,10 @@ export class TuiEngine {
     const p = params || '1';
     const p1 = parseInt(p.split(';')[0] ?? '1', 10);
     const mod = parseInt(p.split(';')[1] ?? '1', 10);
-    const shift = !!(mod & 1);
-    const meta = !!(mod & 2);
-    const ctrl = !!(mod & 4);
+    const m = mod > 0 ? mod - 1 : 0;
+    const shift = !!(m & 1);
+    const meta = !!(m & 2);
+    const ctrl = !!(m & 4);
 
     const nameMap: Record<string, string> = {
       'A': 'up', 'B': 'down', 'C': 'right', 'D': 'left',

@@ -1,8 +1,15 @@
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { exec } from 'node:child_process';
 import type { LibreConfig } from 'librecode-types';
 import { ProviderRegistry } from './provider-registry.js';
 import { ConfigurationManager } from './configuration-manager.js';
+import { ProviderFactory } from './provider-factory.js';
+
+function openBrowser(url: string) {
+  const cmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+  exec(`${cmd} "${url}"`);
+}
 
 export class SetupWizard {
   private registry: ProviderRegistry;
@@ -23,21 +30,52 @@ export class SetupWizard {
       output.write('\x1B[36m╰──────────────────────────────────────╯\x1B[39m\n\n');
 
       const providers = this.registry.all();
+      
+      const local = providers.filter(p => this.registry.deriveCapabilities(p.id).localServer);
+      const free = providers.filter(p => p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
+      const cloud = providers.filter(p => !p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
 
       output.write('Choose an AI provider:\n\n');
-      output.write(`  \x1B[33m0.\x1B[39m \x1B[32mFree\x1B[39m (No API key needed) \x1B[32m✓ Recommended\x1B[39m\n`);
-      for (let i = 0; i < providers.length; i++) {
-        const p = providers[i]!;
-        const keyInfo = p.requiresApiKey ? ' (API key required)' : ' (no API key needed)';
-        const freeInfo = p.hasFreeTier ? ' \x1B[32m✓ Free tier available\x1B[39m' : '';
-        output.write(`  \x1B[33m${i + 1}.\x1B[39m ${p.name}${keyInfo}${freeInfo}\n`);
+      let index = 0;
+      const choices: string[] = [];
+      
+      output.write(`  \x1B[33m0.\x1B[39m ⭐ \x1B[32mFree\x1B[39m (Auto-routing best free models)\n`);
+      choices.push('free');
+      
+      if (local.length > 0) {
+         output.write(`\n  🏠 \x1B[90mLocal\x1B[39m\n`);
+         for (const p of local) {
+            index++;
+            choices.push(p.id);
+            output.write(`  \x1B[33m${index}.\x1B[39m ${p.name}\n`);
+         }
       }
-      output.write(`  \x1B[33m${providers.length + 1}.\x1B[39m Configure Later\n\n`);
+      
+      if (free.length > 0) {
+         output.write(`\n  ⭐ \x1B[90mRecommended Free\x1B[39m\n`);
+         for (const p of free) {
+            index++;
+            choices.push(p.id);
+            output.write(`  \x1B[33m${index}.\x1B[39m ${p.name}\n`);
+         }
+      }
+      
+      if (cloud.length > 0) {
+         output.write(`\n  ☁ \x1B[90mCloud Premium\x1B[39m\n`);
+         for (const p of cloud) {
+            index++;
+            choices.push(p.id);
+            output.write(`  \x1B[33m${index}.\x1B[39m ${p.name}\n`);
+         }
+      }
+      
+      index++;
+      output.write(`\n  \x1B[33m${index}.\x1B[39m Configure Later\n\n`);
 
-      const choice = await rl.question('\x1B[90mEnter choice (0-' + (providers.length + 1) + '): \x1B[39m');
+      const choice = await rl.question(`\x1B[90mEnter choice (0-${index}): \x1B[39m`);
       const num = parseInt(choice.trim(), 10);
 
-      if (isNaN(num) || num < 0 || num > providers.length + 1) {
+      if (isNaN(num) || num < 0 || num > index) {
         output.write('\x1B[33mNo provider configured. Run `librecode` again to set up.\x1B[39m\n');
         this.saveEmpty();
         return false;
@@ -49,63 +87,205 @@ export class SetupWizard {
         return true;
       }
 
-      if (num === providers.length + 1) {
+      if (num === index) {
         output.write('\x1B[33mYou can configure a provider later with `librecode provider login`.\x1B[39m\n');
         this.saveEmpty();
         return false;
       }
 
-      const selected = providers[num - 1]!;
-      return await this.configureProvider(rl, selected.id);
+      const selectedId = choices[num];
+      return await this.configureProviderInteractiveWithRl(rl, selectedId!);
     } finally {
       rl.close();
     }
   }
 
-  private async configureProvider(rl: readline.Interface, providerId: string): Promise<boolean> {
+  async configureProviderInteractive(providerId: string): Promise<boolean> {
+     const rl = readline.createInterface({ input, output });
+     try {
+        return await this.configureProviderInteractiveWithRl(rl, providerId);
+     } finally {
+        rl.close();
+     }
+  }
+
+  private async configureProviderInteractiveWithRl(rl: readline.Interface, providerId: string): Promise<boolean> {
     const meta = this.registry.get(providerId);
     if (!meta) return false;
 
     output.write(`\n\x1B[36m── ${meta.name} Configuration ──\x1B[39m\n\n`);
 
-    const config: LibreConfig = {
-      defaultProvider: providerId,
-      providers: {},
-    };
+    const caps = this.registry.deriveCapabilities(providerId);
+    
+    output.write(`\x1B[1mProvider:\x1B[22m ${meta.name}\n`);
+    output.write(`\x1B[1mDescription:\x1B[22m ${meta.description}\n`);
+    
+    let authType = 'None';
+    if (caps.apiKeys) authType = 'API Key';
+    if (caps.browserLogin) authType = 'Browser Login';
+    if (caps.localServer) authType = 'Local Server';
+    output.write(`\x1B[1mAuthentication:\x1B[22m ${authType}\n`);
+    output.write(`\x1B[1mFree Tier:\x1B[22m ${meta.hasFreeTier ? 'Yes' : 'No'}\n`);
+    output.write(`\x1B[1mStreaming Support:\x1B[22m ${meta.supportsStreaming ? 'Yes' : 'No'}\n`);
+    output.write(`\x1B[1mTool Calling Support:\x1B[22m ${meta.supportsToolCalling ? 'Yes' : 'No'}\n`);
+    output.write(`\x1B[1mDocumentation:\x1B[22m ${meta.docsUrl || meta.website}\n\n`);
 
-    if (meta.requiresApiKey) {
-      output.write(`Get your API key at: \x1B[4m${meta.docsUrl}\x1B[24m\n\n`);
-      const apiKey = await rl.question(`\x1B[90mEnter your ${meta.name} API key (or leave blank to skip): \x1B[39m`);
+    const config: LibreConfig = this.configManager.load() || { defaultProvider: 'free', providers: {} };
+    config.defaultProvider = providerId;
+    if (!config.providers) config.providers = {};
+
+    let apiKey = '';
+
+    if (caps.browserLogin || caps.deviceFlow) {
+       output.write(`\x1B[1mBrowser Login Supported\x1B[22m\n`);
+       output.write(`\x1B[33mThis authentication flow is not yet implemented.\x1B[39m\n`);
+       return false;
+    } else if (caps.apiKeys) {
+      const openDocs = await rl.question(`\x1B[90mOpen official API key page in browser? (Y/n): \x1B[39m`);
+      if (openDocs.trim().toLowerCase() !== 'n') {
+         openBrowser(meta.docsUrl || meta.website || '');
+      }
+      
+      apiKey = await rl.question(`\n\x1B[90mEnter your ${meta.name} API key (or leave blank to skip): \x1B[39m`);
       if (!apiKey.trim()) {
         output.write('\x1B[33mSkipped. Run `librecode provider login` later to configure.\x1B[39m\n');
         return false;
       }
-      config.providers[providerId] = {
-        enabled: true,
-        apiKey: apiKey.trim(),
-        defaultModel: meta.defaultModel,
-      };
+      
+      output.write('\x1B[90mValidating key...\x1B[39m ');
+      
+      try {
+         const factory = new ProviderFactory(this.registry);
+         const tempProvider = factory.create(providerId, { enabled: true, apiKey: apiKey.trim(), defaultModel: meta.defaultModel });
+         const health = await tempProvider.health();
+         if (health.status === 'unhealthy') {
+            throw new Error(health.message || 'Health check failed');
+         }
+         output.write('\x1B[32m✓ Connected\x1B[39m\n');
+         
+         let finalModel = meta.defaultModel;
+         if (caps.modelDiscovery) {
+             output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
+             try {
+                 const models = await tempProvider.listModels();
+                 if (models.length > 0) {
+                     output.write('\nAvailable Models:\n');
+                     const displayLimit = Math.min(models.length, 15); // limit display
+                     for (let i = 0; i < displayLimit; i++) {
+                         output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
+                     }
+                     if (models.length > displayLimit) {
+                         output.write(`  ... and ${models.length - displayLimit} more\n`);
+                     }
+                     const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
+                     const mIdx = parseInt(mChoice.trim(), 10);
+                     if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
+                         finalModel = models[mIdx - 1]!.id;
+                     } else {
+                         finalModel = models[0]!.id;
+                     }
+                 }
+             } catch (err) {
+                 output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
+             }
+         }
+
+         config.providers[providerId] = {
+           enabled: true,
+           apiKey: apiKey.trim(),
+           defaultModel: finalModel,
+         };
+         output.write(`\n\x1B[32mConfiguration saved.\x1B[39m\n`);
+      } catch (err) {
+         output.write(`\x1B[31m✘ Validation failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+         const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
+         if (retry.trim().toLowerCase() !== 'y') {
+            return false;
+         }
+         config.providers[providerId] = {
+           enabled: true,
+           apiKey: apiKey.trim(),
+           defaultModel: meta.defaultModel,
+         };
+      }
+    } else if (caps.localServer) {
+       output.write(`\n\x1B[1mLocal Provider Detected\x1B[22m\n`);
+       const defaultEndpoint = providerId === 'ollama' ? 'http://localhost:11434/v1' : 'http://localhost:1234/v1';
+       const endpoint = await rl.question(
+         `\x1B[90mEnter ${meta.name} endpoint (default: ${defaultEndpoint}): \x1B[39m`,
+       );
+       
+       let finalModel = meta.defaultModel;
+       const finalEndpoint = endpoint.trim() || defaultEndpoint;
+       
+       output.write('\x1B[90mConnecting...\x1B[39m ');
+       try {
+           const factory = new ProviderFactory(this.registry);
+           const tempProvider = factory.create(providerId, { enabled: true, endpoint: finalEndpoint, defaultModel: meta.defaultModel });
+           const health = await tempProvider.health();
+           if (health.status === 'unhealthy') {
+              throw new Error(health.message || 'Health check failed');
+           }
+           output.write('\x1B[32m✓ Connected\x1B[39m\n');
+           
+           if (caps.modelDiscovery) {
+               output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
+               try {
+                   const models = await tempProvider.listModels();
+                   if (models.length > 0) {
+                       output.write('\nAvailable Models:\n');
+                       const displayLimit = Math.min(models.length, 15);
+                       for (let i = 0; i < displayLimit; i++) {
+                           output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
+                       }
+                       if (models.length > displayLimit) {
+                           output.write(`  ... and ${models.length - displayLimit} more\n`);
+                       }
+                       const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
+                       const mIdx = parseInt(mChoice.trim(), 10);
+                       if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
+                           finalModel = models[mIdx - 1]!.id;
+                       } else {
+                           finalModel = models[0]!.id;
+                       }
+                   }
+               } catch (err) {
+                   output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
+               }
+           }
+       } catch (err) {
+           output.write(`\x1B[31m✘ Connection failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+           const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
+           if (retry.trim().toLowerCase() !== 'y') {
+              return false;
+           }
+       }
+
+       config.providers[providerId] = {
+         enabled: true,
+         endpoint: finalEndpoint,
+         defaultModel: finalModel,
+       };
     } else {
-      const endpoint = await rl.question(
-        `\x1B[90mEnter ${meta.name} endpoint [${meta.defaultModel}]: \x1B[39m`,
-      );
-      config.providers[providerId] = {
-        enabled: true,
-        endpoint: endpoint.trim() || undefined,
-        defaultModel: meta.defaultModel,
-      };
+       // Fallback if none are matched, just use old logic
+       const endpoint = await rl.question(
+         `\x1B[90mEnter ${meta.name} endpoint [${meta.defaultModel}]: \x1B[39m`,
+       );
+       config.providers[providerId] = {
+         enabled: true,
+         endpoint: endpoint.trim() || undefined,
+         defaultModel: meta.defaultModel,
+       };
     }
 
     this.configManager.save(config);
-    output.write(`\n\x1B[32m✓ ${meta.name} configured successfully!\x1B[39m\n`);
+    output.write(`\n\x1B[32m✓ ${meta.name} configured securely!\x1B[39m\n`);
     return true;
   }
 
   private saveEmpty(): void {
-    const config: LibreConfig = {
-      defaultProvider: 'free',
-      providers: {},
-    };
+    const config: LibreConfig = this.configManager.load() || { defaultProvider: 'free', providers: {} };
+    config.defaultProvider = 'free';
     this.configManager.save(config);
   }
 }

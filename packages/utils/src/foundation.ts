@@ -33,7 +33,7 @@ export class LibreError extends Error {
     super(message);
     this.name = 'LibreError';
     if (originalCause) {
-      (this as any).cause = originalCause;
+      (this as unknown as { cause: Error }).cause = originalCause;
     }
     if (originalCause?.stack) {
       this.stack = `${this.stack}\nCaused by: ${originalCause.stack}`;
@@ -54,12 +54,12 @@ export class LibreError extends Error {
 }
 
 // 3. Event Bus
-type Listener<T = any> = (event: T) => void | Promise<void>;
+type Listener<T = unknown> = (event: T) => void | Promise<void>;
 
 export class EventBus {
   private listeners = new Map<string, Set<Listener>>();
 
-  on<K extends string, T = any>(event: K, listener: Listener<T>): () => void {
+  on<K extends string, T = unknown>(event: K, listener: Listener<T>): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
@@ -67,7 +67,7 @@ export class EventBus {
     return () => this.off(event, listener);
   }
 
-  off<K extends string, T = any>(event: K, listener: Listener<T>): void {
+  off<K extends string, T = unknown>(event: K, listener: Listener<T>): void {
     const set = this.listeners.get(event);
     if (set) {
       set.delete(listener);
@@ -77,7 +77,7 @@ export class EventBus {
     }
   }
 
-  emit<K extends string, T = any>(event: K, payload: T): void {
+  emit<K extends string, T = unknown>(event: K, payload: T): void {
     const set = this.listeners.get(event);
     if (!set) return;
     for (const listener of set) {
@@ -192,7 +192,7 @@ export class DisposableStore implements Disposable {
 
 // 6. Structured Logging & Metrics Interfaces
 export interface LogMeta {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class Logger {

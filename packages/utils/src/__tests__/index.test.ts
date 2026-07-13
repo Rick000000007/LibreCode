@@ -179,11 +179,9 @@ describe('Utils Package - Exported Functions', () => {
     it('adds overhead based on role', () => {
       const userMsg: Message = { role: 'user', content: 'test' };
       const toolMsg: Message = { role: 'tool', content: 'result', tool_call_id: 'call_1' };
-      const assistantMsg: Message = { role: 'assistant', content: 'response' };
 
       const userTokens = countMessageTokens(userMsg);
       const toolTokens = countMessageTokens(toolMsg);
-      const assistantTokens = countMessageTokens(assistantMsg);
 
       // tool role has overhead of 3, others have 4
       expect(toolTokens).toBeLessThanOrEqual(userTokens);

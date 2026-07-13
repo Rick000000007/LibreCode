@@ -94,6 +94,29 @@ export class TerminalRenderer {
       case 'turn_complete':
         this.handleTurnComplete(event.turnNumber);
         break;
+      case 'workflow_started':
+        this.workflow.beginStep('workflow', 'Workflow Started');
+        for (const plan of event.plan) {
+           process.stdout.write(`\n  □ ${plan}`);
+        }
+        process.stdout.write('\n');
+        break;
+      case 'task_started':
+        this.workflow.beginStep(`task_${event.taskId}`, event.description);
+        process.stdout.write(`\n  ▶ ${event.description}\n`);
+        break;
+      case 'task_completed':
+        this.workflow.completeStep(`task_${event.taskId}`, event.result);
+        process.stdout.write(`\n  ✓ ${event.taskId} - ${event.result}\n`);
+        break;
+      case 'task_failed':
+        this.workflow.failStep(`task_${event.taskId}`, event.error);
+        process.stdout.write(`\n  ✗ ${event.taskId} - ${event.error}\n`);
+        break;
+      case 'workflow_completed':
+        this.workflow.completeStep('workflow', event.summary);
+        process.stdout.write(`\nWorkflow Complete: ${event.summary}\n`);
+        break;
     }
   }
 

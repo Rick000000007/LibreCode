@@ -303,38 +303,38 @@ describe('Tools Package', () => {
   });
 
   describe('PermissionChecker', () => {
-    it('allows all tools when yes=true', () => {
+    it('allows all tools when yes=true', async () => {
       const checker = new PermissionChecker(true);
-      expect(checker.check('any_tool', {})).toBe(true);
+      expect(await checker.check('any_tool', {})).toBe(true);
     });
 
-    it('allows safe tools by default', () => {
+    it('allows safe tools by default', async () => {
       const checker = new PermissionChecker(false);
-      expect(checker.check('read_file', {})).toBe(true);
+      expect(await checker.check('read_file', {})).toBe(true);
     });
 
-    it('allows unsafe tools in non-interactive mode', () => {
+    it('allows unsafe tools in non-interactive mode', async () => {
       const checker = new PermissionChecker(false);
-      expect(checker.check('run_command', {})).toBe(true);
+      expect(await checker.check('run_command', {})).toBe(true);
     });
 
-    it('allows explicitly allowed tools', () => {
+    it('allows explicitly allowed tools', async () => {
       const checker = new PermissionChecker(false);
       checker.setAlwaysAllow('run_command');
-      expect(checker.check('run_command', {})).toBe(true);
+      expect(await checker.check('run_command', {})).toBe(true);
     });
 
-    it('denies explicitly denied tools', () => {
+    it('denies explicitly denied tools', async () => {
       const checker = new PermissionChecker(false);
       checker.setDeny('write_file');
-      expect(checker.check('write_file', {})).toBe(false);
+      expect(await checker.check('write_file', {})).toBe(false);
     });
 
-    it('resets tool permissions', () => {
+    it('resets tool permissions', async () => {
       const checker = new PermissionChecker(false);
       checker.setAlwaysAllow('run_command');
       checker.resetTool('run_command');
-      expect(checker.check('run_command', {})).toBe(true);
+      expect(await checker.check('run_command', {})).toBe(true); // fallbacks to non-interactive true
     });
 
     it('lists permissions', () => {

@@ -5,14 +5,30 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 import { loadConfig, type CliOptions } from 'librecode-config';
-import { Agent, generateSystemPrompt, RepoMapper } from 'librecode-core';
+import {
+  Agent,
+  WorkflowEngine,
+  RepoMapper,
+  generateSystemPrompt,
+} from 'librecode-core';
 import { TerminalRenderer, getLogger } from 'librecode-ui';
-import { ToolRegistry, PermissionChecker } from 'librecode-tools';
+import {
+  ToolRegistry,
+  PermissionChecker,
+  ListDirTool,
+  ReadFileTool,
+  SearchCodeTool,
+  EditFileTool,
+  WriteFileTool,
+  RunCommandTool,
+  UndoFileTool,
+  GitTool,
+  WebFetchTool,
+} from 'librecode-tools';
 import {
   ProviderManager,
   SetupWizard,
   ProviderRegistry,
-  ConfigurationManager,
   printProviderList,
   printProviderCurrent,
   handleProviderLogin,
@@ -22,11 +38,13 @@ import {
   handleProviderModels,
   Doctor,
   formatDoctorReport,
+  ConfigurationManager,
 } from 'librecode-providers';
 import { LibreError } from 'librecode-utils';
 import { LlmError } from 'librecode-providers';
 import { globalCommandRegistry } from './command-framework.js';
 import './commands-impl.js';
+import type { AgentEvent } from 'librecode-types';
 import { TuiApp } from 'librecode-ui';
 
 const VERSION = JSON.parse(
@@ -195,12 +213,6 @@ async function main(): Promise<void> {
   // Provider manager
   const providerManager = new ProviderManager();
 
-  // First-run: auto-save default config with free provider
-  if (providerManager.isFirstRun() && !cliOptions.prompt) {
-    const configMgr = new ConfigurationManager();
-    configMgr.save({ defaultProvider: 'free', providers: {} });
-  }
-
   // Initialize provider
   let active = await providerManager.initialize();
 
@@ -240,6 +252,8 @@ async function main(): Promise<void> {
     workingDir,
     permissionChecker,
   );
+
+  const workflowEngine = agent ? new WorkflowEngine(agent, tools) : null;
 
   if (!agent) {
     process.stderr.write('\x1B[31mFailed to initialize agent.\x1B[39m\n');
@@ -322,13 +336,17 @@ async function main(): Promise<void> {
       tuiApp.render();
 
       try {
+        const onApproval = async (toolName: string, args: Record<string, unknown>, desc: string) => {
+          return await tuiApp.requestApproval(toolName, args, desc);
+        };
+
         if (agent.supportsStreaming()) {
           let fullResponse = '';
-          await agent.runTurnStreaming(trimmed, (event) => {
+          await workflowEngine!.executeGoal(trimmed, (event) => {
             switch (event.type) {
               case 'text_delta':
                 fullResponse += event.delta;
-                tuiApp.appendToLast(event.delta);
+                tuiApp.streamTextDelta(event.delta);
                 break;
               case 'tool_start':
                 tuiApp.addToConversation(
@@ -353,22 +371,40 @@ async function main(): Promise<void> {
               case 'fatal_error':
                 tuiApp.addToConversation(`\x1B[31m\u2718 ${event.message}\x1B[39m`, 'system');
                 break;
+              case 'workflow_started':
+                tuiApp.getWorkflow().beginStep('workflow', 'Workflow Started');
+                tuiApp.addToConversation(`\x1B[34m\u25b6 Planned ${event.plan.length} tasks\x1B[39m`, 'system');
+                break;
+              case 'task_started':
+                tuiApp.getWorkflow().beginStep(event.taskId, event.description);
+                tuiApp.addToConversation(`\x1B[34m\u25b6 Task: ${event.description}\x1B[39m`, 'system');
+                break;
+              case 'task_completed':
+                tuiApp.getWorkflow().completeStep(event.taskId, event.result);
+                tuiApp.addToConversation(`\x1B[32m\u2714 Task Complete: ${event.result}\x1B[39m`, 'system');
+                break;
+              case 'task_failed':
+                tuiApp.getWorkflow().failStep(event.taskId, event.error);
+                tuiApp.addToConversation(`\x1B[31m\u2718 Task Failed: ${event.error}\x1B[39m`, 'system');
+                break;
+              case 'workflow_completed':
+                tuiApp.getWorkflow().completeStep('workflow', event.summary);
+                break;
               case 'turn_complete':
                 tuiApp.addToConversation(`\x1B[90m\u2500\u2500\u2500 Turn ${event.turnNumber} \u2500\u2500\u2500\x1B[39m`, 'system');
                 break;
             }
             tuiApp.render();
-          });
+          }, onApproval);
 
           if (fullResponse) {
             tuiApp.getWorkflow().completeStep('thinking', 'Response generated');
           }
         } else {
-          const result = await agent.runTurn(trimmed);
-          if (result) {
-            tuiApp.addMarkdown(result);
-            tuiApp.getWorkflow().completeStep('thinking', 'Response generated');
-          }
+          tuiApp.addToConversation('Processing...', 'system');
+          const response = await workflowEngine!.executeGoal(trimmed, () => {}, onApproval);
+          tuiApp.addToConversation(response, 'assistant');
+          tuiApp.getWorkflow().completeStep('thinking', 'Response generated');
         }
 
         const [used, max] = agent.contextUsage();

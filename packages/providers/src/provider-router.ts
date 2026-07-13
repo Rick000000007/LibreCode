@@ -58,6 +58,13 @@ export class ProviderRouter extends BaseProvider {
       .map(([id]) => id);
   }
 
+  override setModel(model: string): void {
+    super.setModel(model);
+    for (const { provider } of this.providers.values()) {
+      provider.setModel(model);
+    }
+  }
+
   setHealthTtl(ms: number): void {
     this.healthTtlMs = ms;
   }
