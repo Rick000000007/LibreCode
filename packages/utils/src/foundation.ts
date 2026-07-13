@@ -63,14 +63,14 @@ export class EventBus {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(listener);
+    this.listeners.get(event)!.add(listener as Listener<unknown>);
     return () => this.off(event, listener);
   }
 
   off<K extends string, T = unknown>(event: K, listener: Listener<T>): void {
     const set = this.listeners.get(event);
     if (set) {
-      set.delete(listener);
+      set.delete(listener as Listener<unknown>);
       if (set.size === 0) {
         this.listeners.delete(event);
       }
