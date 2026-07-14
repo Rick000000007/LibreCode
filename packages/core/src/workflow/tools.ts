@@ -1,5 +1,4 @@
 import { BaseTool } from 'librecode-tools';
-import type { ToolDefinition } from 'librecode-types';
 
 export class PlanTasksTool extends BaseTool {
   constructor(private onPlan: (tasks: string[]) => void) {

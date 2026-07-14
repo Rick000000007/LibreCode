@@ -72,7 +72,7 @@ describe('ProviderRegistry', () => {
           baseUrl: 'https://api.example.com/v1',
           defaultModel: 'm',
         }),
-      ).toThrow('non-empty id');
+      ).toThrow('Failed to register custom provider');
     });
 
     it('throws on missing baseUrl', () => {

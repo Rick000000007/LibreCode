@@ -1,0 +1,10 @@
+export { AstProviderRegistry, defaultRegistry } from './registry.js';
+export { TsMorphProvider } from './ts-morph.js';
+export { TypeScriptAstProvider } from './typescript.js';
+export { PythonAstProvider } from './python.js';
+export { RustAstProvider } from './rust.js';
+export { GoAstProvider } from './go.js';
+export type { AstProvider } from './provider.js';
+export { isSupportedLanguage } from './provider.js';
+export type { AstEditResult, AstEdit, EditRange, SymbolInfo, Language } from './types.js';
+export { detectLanguage } from './types.js';

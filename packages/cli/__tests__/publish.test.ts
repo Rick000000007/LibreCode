@@ -16,7 +16,7 @@ describe('CLI package publish packaging', () => {
     // Find generated .tgz file
     const files = fs.readdirSync(path.resolve(__dirname, '../../cli')).filter(f => f.endsWith('.tgz'));
     expect(files.length).toBeGreaterThan(0);
-    const tgzPath = path.resolve(__dirname, '../../cli', files[0]);
+    const tgzPath = path.resolve(__dirname, '../../cli', files[0]!);
     // Extract package.json content from tarball
     const pkgJsonStr = execSync(`tar -xOf ${tgzPath} package/package.json`).toString();
     const pkg = JSON.parse(pkgJsonStr);

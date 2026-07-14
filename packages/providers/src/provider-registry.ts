@@ -13,8 +13,13 @@ interface BuiltinProvider {
   supportsStreaming: boolean;
   supportsToolCalling: boolean;
   docsUrl: string;
+  keyUrl: string;
   envKey: string;
   customHeaders?: Record<string, string>;
+  /** Custom chat completions path (default: /chat/completions) */
+  chatPath?: string;
+  /** Custom model discovery path (default: /models) */
+  modelsPath?: string;
 }
 
 const BUILTIN_PROVIDERS: BuiltinProvider[] = [
@@ -30,6 +35,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: '',
+    keyUrl: '',
     envKey: '',
   },
   {
@@ -44,6 +50,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://platform.openai.com/docs/api-reference',
+    keyUrl: 'https://platform.openai.com/api-keys',
     envKey: 'OPENAI_API_KEY',
   },
   {
@@ -58,6 +65,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.anthropic.com/en/api',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
     envKey: 'ANTHROPIC_API_KEY',
   },
   {
@@ -72,6 +80,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://ai.google.dev/api',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
     envKey: 'GEMINI_API_KEY',
   },
   {
@@ -86,6 +95,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://github.com/ollama/ollama/tree/main/docs',
+    keyUrl: '',
     envKey: '',
   },
   {
@@ -100,6 +110,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://openrouter.ai/docs',
+    keyUrl: 'https://openrouter.ai/keys',
     envKey: 'OPENROUTER_API_KEY',
     customHeaders: { 'HTTP-Referer': 'https://github.com/Rick000000007/LibreCode' },
   },
@@ -115,6 +126,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.api.nvidia.com/nim/reference/llm-apis',
+    keyUrl: 'https://build.nvidia.com/explore/docs',
     envKey: 'NVIDIA_API_KEY',
   },
   {
@@ -129,6 +141,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://console.groq.com/docs',
+    keyUrl: 'https://console.groq.com/keys',
     envKey: 'GROQ_API_KEY',
   },
   {
@@ -143,6 +156,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.together.ai',
+    keyUrl: 'https://api.together.xyz/settings/api-keys',
     envKey: 'TOGETHER_API_KEY',
   },
   {
@@ -157,6 +171,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://deepinfra.com/docs',
+    keyUrl: 'https://deepinfra.com/dash/account/api',
     envKey: 'DEEPINFRA_API_KEY',
   },
   {
@@ -171,6 +186,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.fireworks.ai',
+    keyUrl: 'https://fireworks.ai/account/api-keys',
     envKey: 'FIREWORKS_API_KEY',
   },
   {
@@ -185,6 +201,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.hyperbolic.xyz',
+    keyUrl: 'https://app.hyperbolic.xyz/settings',
     envKey: 'HYPERBOLIC_API_KEY',
   },
   {
@@ -199,6 +216,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.cerebras.ai',
+    keyUrl: 'https://cloud.cerebras.ai/api-keys',
     envKey: 'CEREBRAS_API_KEY',
   },
   {
@@ -213,6 +231,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.x.ai',
+    keyUrl: 'https://console.x.ai/',
     envKey: 'XAI_API_KEY',
   },
   {
@@ -227,6 +246,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.sambanova.ai',
+    keyUrl: 'https://cloud.sambanova.ai/account',
     envKey: 'SAMBANOVA_API_KEY',
   },
   {
@@ -241,6 +261,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://lmstudio.ai/docs/local-server',
+    keyUrl: '',
     envKey: '',
   },
   {
@@ -255,6 +276,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.mistral.ai/api',
+    keyUrl: 'https://console.mistral.ai/api-keys/',
     envKey: 'MISTRAL_API_KEY',
   },
   {
@@ -269,21 +291,29 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.cohere.com/reference/about',
+    keyUrl: 'https://dashboard.cohere.com/api-keys',
     envKey: 'COHERE_API_KEY',
   },
   {
     id: 'github',
     name: 'GitHub Models',
-    description: 'Models hosted on GitHub (Azure OpenAI)',
-    baseUrl: 'https://models.inference.ai.azure.com',
+    description: 'Models hosted on GitHub. Note: retiring July 30, 2026.',
+    baseUrl: 'https://models.github.ai',
     requiresApiKey: true,
     hasFreeTier: true,
     website: 'https://github.com/marketplace/models',
-    defaultModel: 'gpt-4o',
+    defaultModel: 'openai/gpt-4o',
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.github.com/en/github-models',
+    keyUrl: 'https://github.com/settings/tokens?type=beta',
     envKey: 'GITHUB_TOKEN',
+    chatPath: '/inference/chat/completions',
+    modelsPath: '/catalog/models',
+    customHeaders: {
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2026-03-10',
+    },
   },
   {
     id: 'huggingface',
@@ -297,13 +327,14 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://huggingface.co/docs/api-inference',
+    keyUrl: 'https://huggingface.co/settings/tokens',
     envKey: 'HF_TOKEN',
   },
   {
     id: 'deepseek',
     name: 'DeepSeek',
     description: 'DeepSeek Coder and Chat models',
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.deepseek.com',
     requiresApiKey: true,
     hasFreeTier: false,
     website: 'https://deepseek.com',
@@ -311,6 +342,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://platform.deepseek.com/api-docs',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
     envKey: 'DEEPSEEK_API_KEY',
   },
   {
@@ -325,6 +357,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: false,
     docsUrl: 'https://docs.perplexity.ai',
+    keyUrl: 'https://www.perplexity.ai/settings/api',
     envKey: 'PERPLEXITY_API_KEY',
   },
   {
@@ -339,6 +372,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://novita.ai/docs',
+    keyUrl: 'https://novita.ai/settings/api-keys',
     envKey: 'NOVITA_API_KEY',
   },
   {
@@ -353,6 +387,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.featherless.ai',
+    keyUrl: 'https://featherless.ai/account/api-keys',
     envKey: 'FEATHERLESS_API_KEY',
   },
   {
@@ -367,6 +402,7 @@ const BUILTIN_PROVIDERS: BuiltinProvider[] = [
     supportsStreaming: true,
     supportsToolCalling: true,
     docsUrl: 'https://docs.siliconflow.cn',
+    keyUrl: 'https://siliconflow.cn/account/api-key',
     envKey: 'SILICONFLOW_API_KEY',
   },
 ];
@@ -443,6 +479,10 @@ export class ProviderRegistry {
 
   getCustomHeaders(id: string): Record<string, string> | undefined {
     return this.providers.get(id)?.customHeaders ?? this.customProviders.get(id)?.customHeaders;
+  }
+
+  getKeyUrl(id: string): string | undefined {
+    return this.providers.get(id)?.keyUrl;
   }
 
   freeTierProviders(): ProviderMetadata[] {
@@ -542,7 +582,7 @@ export class ProviderRegistry {
         browserLogin: false,
         deviceFlow: false,
         apiKeys: builtin.requiresApiKey,
-        localServer: !builtin.requiresApiKey && builtin.hasFreeTier && builtin.id === 'ollama',
+        localServer: !builtin.requiresApiKey && (builtin.id === 'ollama' || builtin.id === 'lmstudio'),
       };
     }
 
@@ -595,6 +635,7 @@ export class ProviderRegistry {
       supportsStreaming: p.supportsStreaming,
       supportsToolCalling: p.supportsToolCalling,
       docsUrl: p.docsUrl,
+      keyUrl: p.keyUrl || undefined,
     };
   }
 }

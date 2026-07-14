@@ -80,6 +80,10 @@ function parseArgs(argv: string[]): Partial<CliOptions> {
       case '--directory':
         options.dir = argv[++i] ?? '';
         break;
+      case '--debug':
+        options.verbose = true;
+        process.env['LIBRECODE_DEBUG'] = '1';
+        break;
       default:
         if (!arg.startsWith('-')) {
           options.prompt = arg;
@@ -290,11 +294,12 @@ async function main(): Promise<void> {
   // Get git branch for display
   let gitBranch: string | null = null;
   try {
-    const { execSync } = await import('node:child_process');
-    const result = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
+    const { execFileSync } = await import('node:child_process');
+    const result = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd: workingDir,
       encoding: 'utf-8',
       timeout: 2000,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     gitBranch = result.trim() || null;
   } catch {
@@ -466,7 +471,17 @@ async function main(): Promise<void> {
       tuiApp.render();
     },
     onCommand: (cmd) => {
-      tuiApp.addToConversation(`\x1B[90mCommand: ${cmd}\x1B[39m`, 'system');
+      globalCommandRegistry.executeCommand(cmd, {
+        agent,
+        providerManager,
+        config,
+        workingDir,
+        tuiApp,
+        args: [],
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        tuiApp.addToConversation(`\x1B[31mError executing command: ${msg}\x1B[39m`, 'system');
+      });
     },
   });
 

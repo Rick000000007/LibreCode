@@ -122,10 +122,13 @@ export class TerminalRenderer {
 
   private handleTextDelta(delta: string): void {
     this.spinner.stop();
-    this.stage = 'generating_response';
+    if (this.stage !== 'generating_response') {
+      this.workflow.completeStep('thinking');
+      this.stage = 'generating_response';
+      this.workflow.beginStep('generating_response', getStageLabel('generating_response'));
+    }
     this.currentLine += delta;
     process.stdout.write(delta);
-    this.workflow.beginStep('generating_response', getStageLabel('generating_response'));
   }
 
   private handleToolStart(name: string, argsPreview: string): void {
@@ -198,6 +201,7 @@ export class TerminalRenderer {
   private handleTurnComplete(turnNumber: number): void {
     this.stage = 'completed';
     this.spinner.stop();
+    this.workflow.completeStep('generating_response');
     this.workflow.completeStep('turn_complete');
 
     const theme = this.terminal.colorDepth >= 256

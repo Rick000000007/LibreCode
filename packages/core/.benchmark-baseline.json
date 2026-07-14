@@ -1,0 +1,62 @@
+{
+  "timestamp": 1783974456719,
+  "commit": "1ce02e8",
+  "results": [
+    {
+      "name": "AST: TypeScript symbol extraction (1000+ lines)",
+      "hz": 977.77,
+      "mean": 0.7934,
+      "p99": 3.6199,
+      "samples": 0
+    },
+    {
+      "name": "AST: TypeScript rename symbol",
+      "hz": 13967.31,
+      "mean": 0.0543,
+      "p99": 0.1238,
+      "samples": 0
+    },
+    {
+      "name": "AST: Python symbol extraction (1000+ lines)",
+      "hz": 2399.61,
+      "mean": 0.3305,
+      "p99": 2.2754,
+      "samples": 0
+    },
+    {
+      "name": "RAG: TfIdfVectorizer fit (100 docs)",
+      "hz": 2765.44,
+      "mean": 0.3113,
+      "p99": 1.4742,
+      "samples": 0
+    },
+    {
+      "name": "RAG: VectorIndex search (10k chunks)",
+      "hz": 14.6965,
+      "mean": 57.9568,
+      "p99": 77.4443,
+      "samples": 0
+    },
+    {
+      "name": "Checkpoint: createDiff (1000-line files)",
+      "hz": 54.1305,
+      "mean": 17.6066,
+      "p99": 24.7445,
+      "samples": 0
+    },
+    {
+      "name": "Memory: recall from 10k entries",
+      "hz": 6.7469,
+      "mean": 140.77,
+      "p99": 156.05,
+      "samples": 0
+    },
+    {
+      "name": "Validation: validate 1k files",
+      "hz": 0,
+      "mean": 0,
+      "p99": 0,
+      "samples": 0
+    }
+  ]
+}

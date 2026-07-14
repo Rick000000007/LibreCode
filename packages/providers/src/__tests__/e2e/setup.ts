@@ -1,6 +1,9 @@
 import { beforeAll, afterAll } from 'vitest';
+import * as path from 'node:path';
 import { spawn, ChildProcess } from 'node:child_process';
 import { createHttpClient } from '../http-client.js';
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 
 let cliProcess: ChildProcess | null = null;
 
@@ -46,8 +49,8 @@ export async function getE2EContext(): Promise<E2ETestContext> {
   try {
     // Check if built locally
     const { execSync } = await import('node:child_process');
-    execSync('pnpm --filter librecode-cli build', { cwd: '/root/rcode-ts', stdio: 'ignore' });
-    cliBinary = 'node /root/rcode-ts/packages/cli/dist/index.js';
+    execSync('pnpm --filter librecode-cli build', { cwd: PROJECT_ROOT, stdio: 'ignore' });
+    cliBinary = `node ${path.join(PROJECT_ROOT, 'packages', 'cli', 'dist', 'index.js')}`;
   } catch {
     // Use global binary
   }

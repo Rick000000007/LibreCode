@@ -60,9 +60,10 @@ export class EditFileTool extends BaseTool {
       );
     }
 
-    const content = await fs.readFile(fullPath, 'utf-8').catch((e) => {
+    const rawContent = await fs.readFile(fullPath, 'utf-8').catch((e) => {
       throw new Error(`Failed to read ${fullPath}: ${e.message}`);
     });
+    const content = rawContent.replace(/\r\n/g, '\n');
 
     const backupPath = fullPath + '.bak';
     await fs.writeFile(backupPath, content, 'utf-8');

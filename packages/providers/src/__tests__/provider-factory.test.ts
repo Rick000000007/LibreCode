@@ -47,7 +47,7 @@ describe('ProviderFactory', () => {
       factory.create('nonexistent', {
         enabled: true,
       }),
-    ).toThrow('Unknown provider');
+    ).toThrow('Could not find an AI provider named');
   });
 
   it('throws with actionable message listing available providers', () => {
@@ -55,7 +55,7 @@ describe('ProviderFactory', () => {
       factory.create('not-a-provider', { enabled: true });
     } catch (err) {
       const msg = (err as Error).message;
-      expect(msg).toContain('Available providers');
+      expect(msg).toContain('available providers');
       expect(msg).toContain('openai');
       expect(msg).toContain('ollama');
     }
@@ -66,7 +66,7 @@ describe('ProviderFactory', () => {
       factory.create('openai', {
         enabled: true,
       }),
-    ).toThrow(/No API key found for provider 'openai'/);
+    ).toThrow(/Missing API key for 'openai'/);
   });
 
   it('reads API key from environment variable as fallback', () => {
@@ -92,7 +92,7 @@ describe('ProviderFactory', () => {
         apiKey: 'sk-test',
         endpoint: 'not-a-url',
       }),
-    ).toThrow('Endpoint must start with http:// or https://');
+    ).toThrow('endpoint URL');
   });
 
   it('preserves custom headers in created provider', () => {

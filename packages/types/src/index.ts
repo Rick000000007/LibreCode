@@ -207,6 +207,7 @@ export interface ProviderMetadata {
   supportsStreaming: boolean;
   supportsToolCalling: boolean;
   docsUrl: string;
+  keyUrl?: string;
   capabilities?: ProviderCapabilities;
 }
 
@@ -292,6 +293,8 @@ export interface DoctorCheck {
   status: 'passed' | 'warning' | 'failed';
   message: string;
   fix?: string;
+  /** Detailed multi-line diagnostic information */
+  detail?: string;
 }
 
 export interface DoctorReport {
@@ -300,4 +303,6 @@ export interface DoctorReport {
   platform: string;
   checks: DoctorCheck[];
   summary: { passed: number; warnings: number; failed: number };
+  /** Detailed provider diagnostics as formatted text */
+  details?: string;
 }

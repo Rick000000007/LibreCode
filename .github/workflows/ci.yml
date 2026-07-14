@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master, main]
 
+env:
+  BENCHMARK_THRESHOLD: 20
+
 jobs:
   test-and-build:
     name: Build & Smoke Tests
@@ -17,6 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -28,7 +33,26 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      
+
+      - name: Benchmarks & Performance Regression Detection
+        run: pnpm bench:ci
+        working-directory: packages/core
+        continue-on-error: false
+
+      - name: Upload Benchmark Baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline-${{ github.sha }}
+          path: .benchmark-baseline.json
+          if-no-files-found: warn
+
+      - name: Upload Benchmark Trends
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-trends-${{ github.sha }}
+          path: .benchmark-trends/
+          if-no-files-found: warn
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -51,9 +75,52 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      
+
       - name: Run Integration Tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: pnpm test -- --testNamePattern="Integration"
+
+  mutation-tests:
+    name: Mutation Tests
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Run Stryker Mutation Tests
+        run: pnpm mutation
+        working-directory: packages/core
+        continue-on-error: false
+
+      - name: Upload Mutation Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ github.sha }}
+          path: packages/core/reports/
+          if-no-files-found: warn
+
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:e2e

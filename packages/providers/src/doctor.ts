@@ -8,7 +8,9 @@ import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';
 import { ProviderRouter } from './provider-router.js';
 
-const VERSION = '0.2.2';
+const VERSION = '1.0.0';
+
+const healthCache = new Map<string, { available: boolean; error?: string; latency: number; timestamp: number }>();
 
 export class Doctor {
   private configManager: ConfigurationManager;
@@ -19,8 +21,9 @@ export class Doctor {
     this.registry = new ProviderRegistry();
   }
 
-  async run(): Promise<DoctorReport> {
+  async run(onProgress?: (msg: string) => void): Promise<DoctorReport> {
     const checks: DoctorCheck[] = [];
+    if (onProgress) onProgress('Running diagnostics...');
 
     checks.push(this.checkNodeVersion());
     checks.push(this.checkPlatform());
@@ -30,7 +33,8 @@ export class Doctor {
     checks.push(await this.checkInternet());
     checks.push(this.checkTerminal());
 
-    const providerChecks = await this.checkProviders();
+    if (onProgress) onProgress('Checking providers...');
+    const providerChecks = await this.checkProviders(onProgress);
     checks.push(...providerChecks);
 
     const summary = {
@@ -39,13 +43,37 @@ export class Doctor {
       failed: checks.filter((c) => c.status === 'failed').length,
     };
 
+    // For terminal output, include the full details section
+    const details = this.formatAllProviderDetails(checks);
+
     return {
       timestamp: new Date().toISOString(),
       version: VERSION,
       platform: `${os.platform()} ${os.release()}`,
       checks,
       summary,
+      details,
     };
+  }
+
+  private formatAllProviderDetails(checks: DoctorCheck[]): string {
+    const lines: string[] = [];
+    for (const check of checks) {
+      if (check.name.startsWith('Provider:')) {
+        lines.push(`  ${check.name}`);
+        if (check.detail) {
+          for (const line of check.detail.split('\n')) {
+            lines.push(`    ${line}`);
+          }
+        }
+        lines.push(`  Status: ${check.status.toUpperCase()} - ${check.message}`);
+        if (check.fix) {
+          lines.push(`  Fix: ${check.fix}`);
+        }
+        lines.push('');
+      }
+    }
+    return lines.join('\n');
   }
 
   private checkNodeVersion(): DoctorCheck {
@@ -195,67 +223,159 @@ export class Doctor {
     };
   }
 
-  private async checkProviders(): Promise<DoctorCheck[]> {
+  private async checkProviders(onProgress?: (msg: string) => void): Promise<DoctorCheck[]> {
     const config = this.configManager.load();
     const checks: DoctorCheck[] = [];
+    const enabledEntries = Object.entries(config.providers).filter(([, entry]) => entry.enabled);
 
-    for (const [name, entry] of Object.entries(config.providers)) {
-      if (!entry.enabled) continue;
+    const total = enabledEntries.length;
+    let completed = 0;
+
+    const promises = enabledEntries.map(async ([name, entry], index) => {
       const meta = this.registry.get(name);
+      const builtin = this.registry.getBuiltin(name);
       const displayName = meta?.name ?? name;
+      const baseUrl = entry.endpoint?.trim() || this.registry.getBaseUrl(name) || '';
 
+      const detailLines: string[] = [];
+      detailLines.push(`Provider: ${displayName}`);
+      detailLines.push(`Base URL: ${baseUrl}`);
+      detailLines.push(`Authentication: ${meta?.requiresApiKey ? 'API Key required' : 'None / Local'}`);
+
+      // Validate API key
       if (entry.apiKey) {
         if (entry.apiKey.length < 8) {
-          checks.push({
+          const check: DoctorCheck = {
             name: `Provider: ${displayName}`,
             status: 'warning',
-            message: 'API key looks too short',
-            fix: `Run \`librecode provider login ${name}\` to update the key`,
-          });
-          continue;
+            message: 'API key looks too short (minimum 8 characters)',
+            fix: 'Run `/provider login` to update the key',
+            detail: detailLines.join('\n'),
+          };
+          completed++;
+          if (onProgress) onProgress(`[${completed}/${total}] ${displayName} ......... \u26A0 Key too short`);
+          return check;
         }
-        if (!entry.apiKey.startsWith('sk-') && !entry.apiKey.startsWith('AIza') && !entry.apiKey.startsWith('nvapi-')) {
-          checks.push({
+
+        // Check against known key prefixes
+        const knownPrefixes = ['sk-', 'AIza', 'nvapi-', 'ghp_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_'];
+        const hasKnownPrefix = knownPrefixes.some(p => entry.apiKey!.startsWith(p));
+        if (!hasKnownPrefix) {
+          detailLines.push(`Health: WARNING - API key format not recognized (starts with: ${entry.apiKey.slice(0, 8)}...)`);
+          detailLines.push('  The API key may still be valid, but it does not match common key patterns.');
+          detailLines.push('  Fix: Verify the API key is correct. Run `/provider login` to update.');
+        } else {
+          detailLines.push('Health: API key format looks valid');
+        }
+      } else if (meta?.requiresApiKey) {
+        const envKey = this.registry.getEnvKey(name);
+        const hasEnvKey = !!process.env[envKey];
+        if (hasEnvKey) {
+          detailLines.push(`Authentication: Using ${envKey} from environment`);
+        } else {
+          const check: DoctorCheck = {
             name: `Provider: ${displayName}`,
-            status: 'warning',
-            message: 'API key has unusual format',
-            fix: 'Verify the API key is correct',
-          });
+            status: 'failed',
+            message: 'No API key configured',
+            fix: `Run \`/provider login ${name}\` or set ${envKey} environment variable`,
+            detail: detailLines.join('\n'),
+          };
+          completed++;
+          if (onProgress) onProgress(`[${completed}/${total}] ${displayName} ......... \u2718 Not Configured`);
+          return check;
         }
       }
 
+      // Attempt health check
       try {
         const factory = new ProviderFactory(this.registry);
         const provider = factory.create(name, { ...entry, enabled: true });
         const router = new ProviderRouter();
         router.addProvider(name, provider, 10);
-        const result = await router.checkHealth(name);
 
-        if (result.available) {
-          checks.push({
+        // Test health
+        const healthStart = Date.now();
+        let healthResult: { available: boolean; error?: string };
+        let latency = 0;
+        
+        const cached = healthCache.get(name);
+        if (cached && (healthStart - cached.timestamp < 60000)) {
+           healthResult = { available: cached.available, error: cached.error };
+           latency = cached.latency;
+        } else {
+           const result = await Promise.race([
+             router.checkHealth(name),
+             new Promise<{ available: boolean; error: string }>((r) => setTimeout(() => r({ available: false, error: 'Connection timed out' }), 5000))
+           ]);
+           healthResult = result;
+           latency = Date.now() - healthStart;
+           if (healthResult.available) {
+              healthCache.set(name, { available: true, latency, timestamp: Date.now() });
+           }
+        }
+
+        if (healthResult.available) {
+          detailLines.push(`Health: Available (${latency}ms)`);
+        } else {
+          detailLines.push(`Health: FAILED - ${healthResult.error ?? 'Not available'}`);
+          detailLines.push(`  Latency: ${latency}ms`);
+          detailLines.push(`  Fix: Run \`/provider test ${name}\` for detailed diagnostics`);
+        }
+
+        // Test model discovery
+        try {
+          const models = await Promise.race([
+             provider.listModels(),
+             new Promise<any[]>((r) => setTimeout(() => r([]), 5000))
+          ]);
+          if (models.length > 0) {
+            detailLines.push(`Model Discovery: ${models.length} models found`);
+            detailLines.push(`  Default model: ${entry.defaultModel || meta?.defaultModel || 'N/A'}`);
+            detailLines.push(`  First model: ${models[0]!.id}`);
+          } else {
+            detailLines.push('Model Discovery: No models returned');
+          }
+        } catch (err) {
+          detailLines.push(`Model Discovery: FAILED - ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        completed++;
+        
+        // Determine overall status
+        if (healthResult.available) {
+          if (onProgress) onProgress(`[${completed}/${total}] ${displayName} ......... \u2714 ${latency} ms`);
+          return {
             name: `Provider: ${displayName}`,
             status: 'passed',
-            message: result.latencyMs !== undefined
-              ? `Available (${result.latencyMs}ms)`
-              : 'Available',
-          });
+            message: `Available (${latency}ms) | ${baseUrl}`,
+            detail: detailLines.join('\n'),
+          } as DoctorCheck;
         } else {
-          checks.push({
+          if (onProgress) onProgress(`[${completed}/${total}] ${displayName} ......... \u2718 ${healthResult.error?.includes('ECONNREFUSED') ? 'Not Running' : 'Failed'}`);
+          return {
             name: `Provider: ${displayName}`,
             status: 'failed',
-            message: result.error ?? 'Not available',
-            fix: `Run \`librecode provider test ${name}\` for details`,
-          });
+            message: healthResult.error ?? 'Not available',
+            fix: `Run \`/provider test ${name}\` for details. Run \`/provider login ${name}\` to reconfigure.`,
+            detail: detailLines.join('\n'),
+          } as DoctorCheck;
         }
       } catch (err) {
-        checks.push({
+        detailLines.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        completed++;
+        if (onProgress) onProgress(`[${completed}/${total}] ${displayName} ......... \u2718 Error`);
+        return {
           name: `Provider: ${displayName}`,
           status: 'failed',
           message: err instanceof Error ? err.message : String(err),
-          fix: `Run \`librecode provider login ${name}\` to reconfigure`,
-        });
+          fix: `Run \`/provider login ${name}\` to reconfigure. Run \`/setup\` to start over.`,
+          detail: detailLines.join('\n'),
+        } as DoctorCheck;
       }
-    }
+    });
+
+    const results = await Promise.all(promises);
+    checks.push(...results);
 
     if (checks.length === 0) {
       checks.push({
@@ -285,13 +405,34 @@ export function formatDoctorReport(report: DoctorReport): string {
   lines.push(`${theme.dim}Version: ${report.version} | Platform: ${report.platform}${theme.reset}`);
   lines.push('');
 
+  let lastWasProviderDetail = false;
+
   for (const check of report.checks) {
+    const isProvider = check.name.startsWith('Provider:');
     const icon = check.status === 'passed' ? '✔' : check.status === 'warning' ? '⚠' : '✘';
     const color = check.status === 'passed' ? theme.pass : check.status === 'warning' ? theme.warn : theme.fail;
-    lines.push(`  ${color}${icon}${theme.reset} ${theme.bold}${check.name}${theme.reset}`);
-    lines.push(`     ${theme.dim}${check.message}${theme.reset}`);
-    if (check.fix) {
-      lines.push(`     ${theme.warn}→ ${check.fix}${theme.reset}`);
+
+    if (isProvider && check.detail) {
+      // Multi-line provider detail
+      lines.push(`  ${color}${icon}${theme.reset} ${theme.bold}${check.name}${theme.reset}`);
+      for (const detailLine of check.detail.split('\n')) {
+        lines.push(`    ${theme.dim}${detailLine}${theme.reset}`);
+      }
+      if (check.fix) {
+        lines.push(`    ${theme.warn}→ ${check.fix}${theme.reset}`);
+      }
+      lastWasProviderDetail = true;
+    } else {
+      if (lastWasProviderDetail) {
+        lines.push('');
+        lastWasProviderDetail = false;
+      }
+      lines.push(`  ${color}${icon}${theme.reset} ${theme.bold}${check.name}${theme.reset}`);
+      lines.push(`     ${theme.dim}${check.message}${theme.reset}`);
+      if (check.fix) {
+        lines.push(`     ${theme.warn}→ ${check.fix}${theme.reset}`);
+      }
+      lastWasProviderDetail = false;
     }
   }
 

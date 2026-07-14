@@ -67,12 +67,38 @@ export class OllamaProvider extends BaseProvider {
     };
 
     const url = `${this.baseUrl}/api/chat`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    });
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      });
+    } catch (err) {
+      const hostname = this.extractHostname();
+      const port = this.extractPort();
+      const cause = (err as any)?.cause;
+      const msg = `${(err as Error).message} ${cause instanceof Error ? cause.message : String(cause || '')}`.toLowerCase();
+      const baseMsg = `Ollama: ${msg.includes('econnrefused') ? 'Connection refused' : msg.includes('etimedout') ? 'Connection timed out' : msg.includes('enotfound') ? 'Host unreachable' : 'Connection failed'} at ${this.baseUrl}`;
+
+      let detail = `  Configured URL: ${this.baseUrl}\n  Endpoint: /api/chat`;
+      if (msg.includes('econnrefused')) {
+        detail += `\n  The Ollama server appears to be stopped or unreachable on port ${port}.`;
+        detail += `\n  Suggestion: Run \`ollama serve\` to start the server, or verify it is listening on ${hostname}:${port}.`;
+      } else if (msg.includes('etimedout')) {
+        detail += `\n  Connection to ${hostname}:${port} timed out.`;
+        detail += `\n  Suggestion: Check firewall rules or increase the timeout. Verify Ollama is running with \`ollama ps\`.`;
+      } else if (msg.includes('enotfound')) {
+        detail += `\n  Host '${hostname}' could not be resolved.`;
+        detail += `\n  Suggestion: Verify the configured URL is correct. For local installs, use \`http://localhost:11434\`.`;
+      } else {
+        detail += `\n  Suggestion: Verify the Ollama server is running (\`ollama serve\`) and accessible at ${this.baseUrl}.`;
+      }
+
+      throw LlmError.networkError(`${baseMsg}\n${detail}`);
+    }
 
     const text = await response.text();
 
@@ -105,6 +131,23 @@ export class OllamaProvider extends BaseProvider {
     };
   }
 
+  private extractHostname(): string {
+    try {
+      return new URL(this.baseUrl).hostname;
+    } catch {
+      return this.baseUrl;
+    }
+  }
+
+  private extractPort(): string {
+    try {
+      const url = new URL(this.baseUrl);
+      return url.port || (url.protocol === 'https:' ? '443' : '80');
+    } catch {
+      return '?';
+    }
+  }
+
   override async streamComplete(
     request: CompletionRequest,
     onEvent: StreamCallback,
@@ -118,12 +161,38 @@ export class OllamaProvider extends BaseProvider {
     };
 
     const url = `${this.baseUrl}/api/chat`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    });
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      });
+    } catch (err) {
+      const hostname = this.extractHostname();
+      const port = this.extractPort();
+      const cause = (err as any)?.cause;
+      const msg = `${(err as Error).message} ${cause instanceof Error ? cause.message : String(cause || '')}`.toLowerCase();
+      const baseMsg = `Ollama: ${msg.includes('econnrefused') ? 'Connection refused' : msg.includes('etimedout') ? 'Connection timed out' : msg.includes('enotfound') ? 'Host unreachable' : 'Connection failed'} at ${this.baseUrl}`;
+
+      let detail = `  Configured URL: ${this.baseUrl}\n  Endpoint: /api/chat`;
+      if (msg.includes('econnrefused')) {
+        detail += `\n  The Ollama server appears to be stopped or unreachable on port ${port}.`;
+        detail += `\n  Suggestion: Run \`ollama serve\` to start the server, or verify it is listening on ${hostname}:${port}.`;
+      } else if (msg.includes('etimedout')) {
+        detail += `\n  Connection to ${hostname}:${port} timed out.`;
+        detail += `\n  Suggestion: Check firewall rules or increase the timeout. Verify Ollama is running with \`ollama ps\`.`;
+      } else if (msg.includes('enotfound')) {
+        detail += `\n  Host '${hostname}' could not be resolved.`;
+        detail += `\n  Suggestion: Verify the configured URL is correct. For local installs, use \`http://localhost:11434\`.`;
+      } else {
+        detail += `\n  Suggestion: Verify the Ollama server is running (\`ollama serve\`) and accessible at ${this.baseUrl}.`;
+      }
+
+      throw LlmError.networkError(`${baseMsg}\n${detail}`);
+    }
 
     if (!response.ok) {
       const text = await response.text();

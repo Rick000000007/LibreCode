@@ -127,27 +127,33 @@ export function sumTokenUsage(usages: TokenUsage[]): TokenUsage {
   );
 }
 
-export function resolvePath(path: string, workingDir: string): string {
-  if (path.startsWith('/') || path.match(/^[A-Za-z]:\\/)) {
-    return path;
+export function resolvePath(p: string, workingDir: string): string {
+  if (p.startsWith('/') || /^[A-Za-z]:[/\\]/.test(p)) {
+    return p;
   }
-  return joinPaths(workingDir, path);
+  return joinPaths(workingDir, p);
 }
 
 export function joinPaths(...parts: string[]): string {
   const isWindows = process.platform === 'win32';
-  return parts
-    .map((p, i) => {
-      if (i === 0) return p.replace(/\/+$/, '');
-      return p.replace(/^\/+|\/+$/g, '');
-    })
-    .join(isWindows ? '\\' : '/')
-    .replace(/\/{2,}/g, '/');
+  const result: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    let p = parts[i] ?? '';
+    if (i === 0) {
+      p = p.replace(/[/\\]+$/, '');
+    } else {
+      p = p.replace(/^[/\\]+|[/\\]+$/g, '');
+    }
+    result.push(p);
+  }
+  return result.join(isWindows ? '\\' : '/').replace(/[/\\]{2,}/g, isWindows ? '\\' : '/');
 }
 
 export function getEnvVar(name: string): string | undefined {
   return process.env[name];
 }
 
+export * from './diff.js';
+export * from './diff-renderer.js';
 export * from './foundation.js';
 

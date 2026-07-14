@@ -1,6 +1,6 @@
 {
   "name": "librecode-core",
-  "version": "0.4.0-beta.1",
+  "version": "1.0.0",
   "description": "Core agent runtime for librecode",
   "license": "MIT",
   "publishConfig": {
@@ -30,18 +30,28 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "vitest run e2e",
+    "bench": "vitest bench --run",
+    "bench:ci": "tsx scripts/benchmark-ci.ts",
+    "mutation": "stryker run",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode-types": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^5.0.0",
+    "librecode-memory": "workspace:*",
     "librecode-providers": "workspace:*",
     "librecode-tools": "workspace:*",
-    "librecode-memory": "workspace:*",
-    "librecode-config": "workspace:*",
-    "librecode-utils": "workspace:*"
+    "librecode-types": "workspace:*",
+    "librecode-utils": "workspace:*",
+    "ts-morph": "^28.0.0"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^2.1.9"
   }
 }

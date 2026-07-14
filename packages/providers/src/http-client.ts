@@ -17,6 +17,8 @@ export interface HttpClientOptions {
   proxyUrl?: string;
   preferIpv4?: boolean;
   allowRetryOnNonIdempotent?: boolean;
+  /** Provider name for debug logging */
+  name?: string;
 }
 
 export interface HttpResponse {
@@ -172,6 +174,17 @@ export class HttpClient {
     let lastError: Error | null = null;
     const startTime = Date.now();
 
+    if (this.isDebugEnabled()) {
+      process.stderr.write(`\x1B[90m[DEBUG] HttpClient ---\n`);
+      process.stderr.write(`[DEBUG] Provider: ${this.options.name ?? 'unknown'}\n`);
+      process.stderr.write(`[DEBUG] Base URL: ${this.baseUrl.href}\n`);
+      process.stderr.write(`[DEBUG] Full URL: ${method} ${new URL(path.startsWith('/') ? path.slice(1) : path, this.baseUrl.href.endsWith('/') ? this.baseUrl.href : `${this.baseUrl.href}/`).toString()}\n`);
+      process.stderr.write(`[DEBUG] Method: ${method}\n`);
+      process.stderr.write(`[DEBUG] Max Retries: ${retryPolicy.maxRetries}\n`);
+      process.stderr.write(`[DEBUG] Timeout: ${this.options.timeout}ms\n`);
+      process.stderr.write(`[DEBUG] ---\x1B[39m\n`);
+    }
+
     for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
       if (requestOptions?.signal?.aborted) {
         throw new LibreError(
@@ -188,16 +201,31 @@ export class HttpClient {
             retryPolicy.baseDelayMs * Math.pow(2, attempt - 1),
             retryPolicy.maxDelayMs,
           );
+          if (this.isDebugEnabled()) {
+            process.stderr.write(`\x1B[90m[DEBUG] Retry attempt ${attempt}/${retryPolicy.maxRetries} after ${delay}ms delay\x1B[39m\n`);
+          }
           await sleep(delay);
         }
 
         // Separate DNS Timeout
         if (attempt === 0) {
-          const dnsDiag = await dnsLookupWithTimeout(
-            hostname,
-            this.options.preferIpv4 ?? false,
-            this.options.dnsTimeout ?? 5000
-          );
+          let dnsDiag: ConnectionDiagnostics;
+          try {
+            const dnsStart = Date.now();
+            dnsDiag = await dnsLookupWithTimeout(
+              hostname,
+              this.options.preferIpv4 ?? false,
+              this.options.dnsTimeout ?? 5000
+            );
+            if (this.isDebugEnabled()) {
+              process.stderr.write(`\x1B[90m[DEBUG] DNS: ${dnsDiag.dnsLookup ?? hostname} (${Date.now() - dnsStart}ms)\x1B[39m\n`);
+            }
+          } catch (dnsErr) {
+            if (this.isDebugEnabled()) {
+              process.stderr.write(`\x1B[90m[DEBUG] DNS: FAILED - ${dnsErr instanceof Error ? dnsErr.message : String(dnsErr)}\x1B[39m\n`);
+            }
+            dnsDiag = {};
+          }
           Object.assign(diag, dnsDiag);
         }
 
@@ -217,11 +245,18 @@ export class HttpClient {
         }
 
         if (result.status >= 400) {
+          if (this.isDebugEnabled()) {
+            const bodyPreview = typeof result.body === 'string' ? result.body.slice(0, 200) : '<streaming>';
+            process.stderr.write(`\x1B[90m[DEBUG] Non-2xx status: ${result.status}, body: ${bodyPreview}\x1B[39m\n`);
+          }
           if (
             !stream &&
             shouldRetryOnStatus(result.status, method, this.options.allowRetryOnNonIdempotent ?? false) &&
             attempt < retryPolicy.maxRetries
           ) {
+            if (this.isDebugEnabled()) {
+              process.stderr.write(`\x1B[90m[DEBUG] Status ${result.status} is retryable, retry ${attempt + 1}/${retryPolicy.maxRetries}...\x1B[39m\n`);
+            }
             lastError = new Error(`HTTP ${result.status}: ${(result.body as string).slice(0, 100)}`);
             continue;
           }
@@ -242,8 +277,15 @@ export class HttpClient {
           attempt: String(attempt),
         });
 
+        if (this.isDebugEnabled()) {
+          process.stderr.write(`\x1B[90m[DEBUG] Error (attempt ${attempt + 1}/${retryPolicy.maxRetries + 1}): ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+        }
+
         if (err instanceof Error) {
           if (err.name === 'AbortError') {
+            if (this.isDebugEnabled()) {
+              process.stderr.write(`\x1B[90m[DEBUG] Error Type: TIMEOUT/ABORTED (after ${Date.now() - startTime}ms)\x1B[39m\n`);
+            }
             throw new LibreError(
               'REQUEST_CANCELLED',
               'network',
@@ -258,8 +300,14 @@ export class HttpClient {
             (isIdempotentMethod(method) || (this.options.allowRetryOnNonIdempotent ?? false)) &&
             attempt < retryPolicy.maxRetries
           ) {
+            if (this.isDebugEnabled()) {
+              process.stderr.write(`\x1B[90m[DEBUG] Error is retryable, will retry...\x1B[39m\n`);
+            }
             lastError = err;
             continue;
+          }
+          if (this.isDebugEnabled()) {
+            process.stderr.write(`\x1B[90m[DEBUG] Error Type: NON-RETRYABLE, throwing\x1B[39m\n`);
           }
           throw this.enhanceError(err, url.toString(), diag);
         }
@@ -267,11 +315,32 @@ export class HttpClient {
       }
     }
 
+    if (this.isDebugEnabled()) {
+      process.stderr.write(`\x1B[90m[DEBUG] All ${retryPolicy.maxRetries} retries exhausted, throwing final error\x1B[39m\n`);
+    }
+
     throw this.enhanceError(
       lastError ?? new Error(`Request failed after ${retryPolicy.maxRetries} retries`),
       url.toString(),
       diag
     );
+  }
+
+  private isDebugEnabled(): boolean {
+    return process.env['LIBRECODE_DEBUG'] === '1' || process.env['DEBUG']?.includes('librecode') === true;
+  }
+
+  private redactHeaders(headers: Record<string, string>): Record<string, string> {
+    const redacted: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey === 'authorization' || lowerKey === 'x-api-key' || lowerKey === 'api-key') {
+        redacted[key] = value.length > 8 ? `${value.slice(0, 4)}...${value.slice(-4)}` : '***';
+      } else {
+        redacted[key] = value;
+      }
+    }
+    return redacted;
   }
 
   private async doFetch(
@@ -314,12 +383,27 @@ export class HttpClient {
       requestOptions.signal.addEventListener('abort', abortHandler);
     }
 
+    const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
     const fetchOptions: RequestInit = {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: bodyStr,
       signal: controller.signal,
     };
+
+    const startTime = Date.now();
+
+    if (this.isDebugEnabled()) {
+      const redactedHeaders = this.redactHeaders(headers);
+      process.stderr.write(`\x1B[90m[DEBUG] --- Request ---\n`);
+      process.stderr.write(`[DEBUG] URL: ${method} ${url.toString()}\n`);
+      process.stderr.write(`[DEBUG] Headers: ${JSON.stringify(redactedHeaders, null, 2)}\n`);
+      if (bodyStr) {
+        const truncatedBody = bodyStr.length > 500 ? bodyStr.slice(0, 500) + '...' : bodyStr;
+        process.stderr.write(`[DEBUG] Body: ${truncatedBody}\n`);
+      }
+      process.stderr.write(`[DEBUG] ---\x1B[39m\n`);
+    }
 
     try {
       let fetchUrl = url.toString();
@@ -330,11 +414,23 @@ export class HttpClient {
 
       const response = await fetch(fetchUrl, fetchOptions);
 
+      const latency = Date.now() - startTime;
       diag.httpStatus = response.status;
       diag.contentType = response.headers.get('content-type') ?? undefined;
 
+      if (this.isDebugEnabled()) {
+        process.stderr.write(`\x1B[90m[DEBUG] --- Response ---\n`);
+        process.stderr.write(`[DEBUG] Status: ${response.status} ${response.statusText}\n`);
+        process.stderr.write(`[DEBUG] Latency: ${latency}ms\n`);
+      }
+
       if (!response.ok) {
         const errorBody = await response.text();
+        if (this.isDebugEnabled()) {
+          const truncatedBody = errorBody.length > 1000 ? errorBody.slice(0, 1000) + '...' : errorBody;
+          process.stderr.write(`[DEBUG] Body: ${truncatedBody}\n`);
+          process.stderr.write(`[DEBUG] ---\x1B[39m\n`);
+        }
         return {
           status: response.status,
           headers: Object.fromEntries(response.headers.entries()),
@@ -344,6 +440,10 @@ export class HttpClient {
       }
 
       if (stream && response.body) {
+        if (this.isDebugEnabled()) {
+          process.stderr.write(`[DEBUG] Body: <streaming>\n`);
+          process.stderr.write(`[DEBUG] ---\x1B[39m\n`);
+        }
         return {
           status: response.status,
           headers: Object.fromEntries(response.headers.entries()),
@@ -353,6 +453,11 @@ export class HttpClient {
       }
 
       const text = await response.text();
+      if (this.isDebugEnabled()) {
+        const truncatedBody = text.length > 1000 ? text.slice(0, 1000) + '...' : text;
+        process.stderr.write(`[DEBUG] Body: ${truncatedBody}\n`);
+        process.stderr.write(`[DEBUG] ---\x1B[39m\n`);
+      }
       return {
         status: response.status,
         headers: Object.fromEntries(response.headers.entries()),

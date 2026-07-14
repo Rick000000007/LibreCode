@@ -20,6 +20,10 @@ export interface OpenAICompatibleOptions {
   customHeaders?: Record<string, string>;
   timeout?: number;
   contextWindow?: number;
+  /** Path for chat completions endpoint (default: /chat/completions) */
+  chatPath?: string;
+  /** Path for model discovery endpoint (default: /models) */
+  modelsPath?: string;
 }
 
 interface OpenAiMessage {
@@ -108,10 +112,14 @@ export class OpenAICompatibleProvider extends BaseProvider {
   private defaultModel: string;
   private contextWindow: number;
   private capabilities_: ProviderCapabilities | null = null;
+  private chatPath: string;
+  private modelsPath: string;
 
   constructor(options: OpenAICompatibleOptions) {
     super();
     this.providerName = options.name;
+    this.chatPath = options.chatPath ?? '/chat/completions';
+    this.modelsPath = options.modelsPath ?? '/models';
     
     // Sanitize baseUrl by stripping common endpoint suffixes if the user accidentally included them
     let cleanBaseUrl = options.baseUrl.replace(/\/$/, '');
@@ -130,6 +138,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       timeout: options.timeout ?? 30000,
       maxRetries: 3,
       retryDelay: 1000,
+      name: this.providerName,
     });
     this.defaultModel = options.defaultModel ?? 'gpt-4o';
     this.contextWindow = options.contextWindow ?? estimateContextWindow(this.defaultModel);
@@ -153,7 +162,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
   async detectCapabilities(): Promise<ProviderCapabilities> {
     if (!this.capabilities_) {
-      this.capabilities_ = await detectCapabilities(this.httpClient, this.defaultModel);
+      this.capabilities_ = await detectCapabilities(this.httpClient, this.defaultModel, this.chatPath, this.modelsPath);
     }
     return this.capabilities_;
   }
@@ -162,17 +171,38 @@ export class OpenAICompatibleProvider extends BaseProvider {
     return this.capabilities_;
   }
 
+  override async health(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }> {
+    try {
+      const result = await this.testConnection();
+      if (result.ok) {
+        return { status: 'healthy', message: `${this.providerName} available (${result.latencyMs}ms)` };
+      }
+      return { status: 'unhealthy', message: result.error ?? 'Health check failed' };
+    } catch (err) {
+      return { status: 'unhealthy', message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   override async listModels(): Promise<ModelInfo[]> {
     try {
-      const result = await this.httpClient.request('GET', '/models');
+      const result = await this.httpClient.request('GET', this.modelsPath);
       if (result.status !== 200) return [this.getModel()];
 
-      const parsed = JSON.parse(result.body as string) as {
-        data?: Array<{ id: string }>;
-      };
-      return (parsed.data ?? []).map((m) => ({
+      const raw = JSON.parse(result.body as string);
+
+      // Support both { data: [{id, ...}] } and flat [{id, ...}] response formats
+      let models: Array<{ id: string; name?: string }> = [];
+      if (Array.isArray(raw)) {
+        models = raw;
+      } else if (raw.data && Array.isArray(raw.data)) {
+        models = raw.data;
+      }
+
+      if (models.length === 0) return [this.getModel()];
+
+      return models.map((m) => ({
         id: m.id,
-        name: m.id,
+        name: m.name || m.id,
         provider: this.providerName,
         contextWindow: this.contextWindow,
         supportsToolCalling: this.supportsToolCalling(),
@@ -204,7 +234,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     const start = Date.now();
     try {
-      const result = await this.httpClient.request('POST', '/chat/completions', {
+      const result = await this.httpClient.request('POST', this.chatPath, {
         model: this.defaultModel,
         messages: [{ role: 'user', content: 'hi' }],
         max_tokens: 1,
@@ -287,7 +317,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       body['tools'] = request.tools;
     }
 
-    const result = await this.httpClient.request('POST', '/chat/completions', body);
+    const result = await this.httpClient.request('POST', this.chatPath, body);
 
     if (result.status !== 200) {
       throw this.handleError(result.status, result.body as string);
@@ -346,7 +376,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       body['tools'] = request.tools;
     }
 
-    const result = await this.httpClient.request('POST', '/chat/completions', body, true, options);
+    const result = await this.httpClient.request('POST', this.chatPath, body, true, options);
 
     if (result.status !== 200) {
       throw this.handleError(result.status, result.body as string);

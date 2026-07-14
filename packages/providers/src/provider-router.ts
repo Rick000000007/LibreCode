@@ -86,8 +86,9 @@ export class ProviderRouter extends BaseProvider {
 
     const start = Date.now();
     try {
+      const model = entry.provider.getModel().id;
       const testRequest: CompletionRequest = {
-        model: entry.provider.name() === 'ollama' ? 'codellama' : 'gpt-4o-mini',
+        model,
         messages: [{ role: 'user', content: 'ping' }],
         tools: [],
         maxTokens: 1,

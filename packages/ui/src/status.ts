@@ -1,5 +1,5 @@
 import * as os from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { type TerminalCapabilities, truncateMiddle } from './terminal.js';
 
 export interface StatusInfo {
@@ -14,7 +14,7 @@ export interface StatusInfo {
 
 function getGitBranch(dir: string): string | null {
   try {
-    const result = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
+    const result = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd: dir,
       encoding: 'utf-8',
       timeout: 2000,
@@ -28,7 +28,7 @@ function getGitBranch(dir: string): string | null {
 
 function getGitStatus(dir: string): string | null {
   try {
-    const result = execSync('git status --porcelain 2>/dev/null', {
+    const result = execFileSync('git', ['status', '--porcelain'], {
       cwd: dir,
       encoding: 'utf-8',
       timeout: 2000,

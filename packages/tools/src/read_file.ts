@@ -59,7 +59,7 @@ export class ReadFileTool extends BaseTool {
     }
 
     const content = bytes.toString('utf-8');
-    const lines = content.split('\n');
+    const lines = content.replace(/\r\n/g, '\n').split('\n');
     const start = ((args['start_line'] as number) ?? 1) - 1;
     const end = (args['end_line'] as number) ?? lines.length;
 

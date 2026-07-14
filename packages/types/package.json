@@ -1,6 +1,6 @@
 {
   "name": "librecode-types",
-  "version": "0.4.0-beta.1",
+  "version": "1.0.0",
   "description": "Core type definitions for librecode",
   "license": "MIT",
   "publishConfig": {
@@ -33,7 +33,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^2.1.9"
   }
 }

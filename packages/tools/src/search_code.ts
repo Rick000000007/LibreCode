@@ -1,6 +1,12 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { BaseTool } from './base.js';
 import { resolvePath } from 'librecode-utils';
-import { execSync } from 'node:child_process';
+
+const DEFAULT_EXTS = new Set([
+  'rs', 'ts', 'js', 'jsx', 'tsx', 'py', 'go', 'java', 'c',
+  'cpp', 'h', 'toml', 'json', 'yaml', 'yml', 'md', 'sql', 'sh',
+]);
 
 export class SearchCodeTool extends BaseTool {
   name(): string {
@@ -45,36 +51,87 @@ export class SearchCodeTool extends BaseTool {
     const maxResults = (args['max_results'] as number) ?? 50;
 
     const fullPath = resolvePath(searchPath || '.', workingDir);
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, 'g');
+    } catch {
+      return `Invalid regex pattern: ${pattern}`;
+    }
+
+    const results: { file: string; line: number; text: string }[] = [];
+
+    function matchesGlob(filename: string, glob: string): boolean {
+      const reStr = '^' + glob.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
+      return new RegExp(reStr).test(filename);
+    }
+
+    function walkDir(dir: string): void {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (results.length >= maxResults) return;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkDir(full);
+        } else if (entry.isFile()) {
+          if (include) {
+            if (!matchesGlob(entry.name, include)) continue;
+          } else {
+            const ext = path.extname(entry.name).slice(1).toLowerCase();
+            if (!DEFAULT_EXTS.has(ext)) continue;
+          }
+          try {
+            const content = fs.readFileSync(full, 'utf-8');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              if (regex.test(lines[i]!)) {
+                results.push({
+                  file: path.relative(fullPath, full) || entry.name,
+                  line: i + 1,
+                  text: lines[i]!.trim(),
+                });
+                if (results.length >= maxResults) return;
+                regex.lastIndex = 0;
+              }
+            }
+          } catch {
+            // skip unreadable files
+          }
+        }
+      }
+    }
 
     try {
-      let cmd = 'grep -rn';
-
-      if (include) {
-        cmd += ` --include='${include.replace(/'/g, "'\\''")}'`;
+      const stat = fs.statSync(fullPath);
+      if (stat.isFile()) {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (regex.test(lines[i]!)) {
+            results.push({ file: path.basename(fullPath), line: i + 1, text: lines[i]!.trim() });
+            if (results.length >= maxResults) break;
+            regex.lastIndex = 0;
+          }
+        }
       } else {
-        const exts = [
-          'rs', 'ts', 'js', 'jsx', 'tsx', 'py', 'go', 'java', 'c',
-          'cpp', 'h', 'toml', 'json', 'yaml', 'yml', 'md', 'sql', 'sh',
-        ];
-        cmd += exts.map((ext) => ` --include='*.${ext}'`).join('');
+        walkDir(fullPath);
       }
 
-      cmd += ` --regexp='${pattern.replace(/'/g, "'\\''")}' '${fullPath.replace(/'/g, "'\\''")}' 2>/dev/null || true`;
+      if (results.length === 0) return 'No matches found';
 
-      const output = execSync(cmd, { encoding: 'utf-8', timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
+      const output = results.map(r => `${r.file}:${r.line}:${r.text}`).join('\n');
+      const total = results.length;
 
-      if (!output.trim()) return 'No matches found';
-
-      const lines = output.trim().split('\n');
-      const total = lines.length;
-      const shown = lines.slice(0, maxResults);
-
-      let result = shown.join('\n');
-      if (total > maxResults) {
-        result += `\n\n... and ${total - maxResults} more results (showing ${maxResults} of ${total})`;
+      if (total >= maxResults) {
+        return output + `\n\n... and ${total} total results (showing ${maxResults})`;
       }
 
-      return result;
+      return output;
     } catch {
       return 'No matches found';
     }

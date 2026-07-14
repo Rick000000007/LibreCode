@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
 
 export interface Completion {
   text: string;
@@ -153,11 +152,36 @@ export class Completer {
 
   private getShellCompletions(prefix: string): Completion[] {
     try {
-      const result = execSync(`compgen -c -- "${prefix}" 2>/dev/null || echo ""`, {
-        encoding: 'utf-8',
-        timeout: 1000,
-      });
-      const commands = result.trim().split('\n').filter(Boolean).slice(0, 20);
+      const pathDirs = (process.env['PATH'] ?? '').split(path.delimiter);
+      const seen = new Set<string>();
+      const commands: string[] = [];
+
+      for (const dir of pathDirs) {
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isFile() || entry.isSymbolicLink()) {
+              const name = entry.name;
+              const ext = path.extname(name);
+              // On Windows, filter by executable extensions; on POSIX, include everything
+              if (process.platform === 'win32') {
+                const exts = ['.exe', '.cmd', '.bat', '.ps1'];
+                if (!exts.includes(ext.toLowerCase())) continue;
+              }
+              const cmdName = ext ? name.slice(0, -ext.length) : name;
+              if (cmdName.startsWith(prefix) && !seen.has(cmdName)) {
+                seen.add(cmdName);
+                commands.push(cmdName);
+                if (commands.length >= 20) break;
+              }
+            }
+          }
+        } catch {
+          // skip unreadable directories
+        }
+        if (commands.length >= 20) break;
+      }
+
       return commands.map((cmd) => ({
         text: `!${cmd}`,
         label: cmd,

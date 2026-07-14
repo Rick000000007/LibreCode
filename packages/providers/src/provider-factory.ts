@@ -72,6 +72,8 @@ export class ProviderFactory {
       project: entry.project,
       customHeaders,
       timeout: 30000,
+      chatPath: builtin?.chatPath,
+      modelsPath: builtin?.modelsPath,
     });
   }
 

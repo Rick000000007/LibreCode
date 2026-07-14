@@ -5,6 +5,7 @@ import type { LibreConfig } from 'librecode-types';
 import { ProviderRegistry } from './provider-registry.js';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderFactory } from './provider-factory.js';
+import { OpenAICompatibleProvider } from './openai-compatible.js';
 
 function openBrowser(url: string) {
   const cmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
@@ -31,9 +32,9 @@ export class SetupWizard {
 
       const providers = this.registry.all();
       
-      const local = providers.filter(p => this.registry.deriveCapabilities(p.id).localServer);
-      const free = providers.filter(p => p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
-      const cloud = providers.filter(p => !p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
+      const local = providers.filter(p => p.id !== 'free' && this.registry.deriveCapabilities(p.id).localServer);
+      const free = providers.filter(p => p.id !== 'free' && p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
+      const cloud = providers.filter(p => p.id !== 'free' && !p.hasFreeTier && !this.registry.deriveCapabilities(p.id).localServer);
 
       output.write('Choose an AI provider:\n\n');
       let index = 0;
@@ -135,15 +136,19 @@ export class SetupWizard {
     if (!config.providers) config.providers = {};
 
     let apiKey = '';
+    let validationFailed = false;
 
     if (caps.browserLogin || caps.deviceFlow) {
        output.write(`\x1B[1mBrowser Login Supported\x1B[22m\n`);
        output.write(`\x1B[33mThis authentication flow is not yet implemented.\x1B[39m\n`);
        return false;
     } else if (caps.apiKeys) {
-      const openDocs = await rl.question(`\x1B[90mOpen official API key page in browser? (Y/n): \x1B[39m`);
-      if (openDocs.trim().toLowerCase() !== 'n') {
-         openBrowser(meta.docsUrl || meta.website || '');
+      const keyUrl = meta.keyUrl || meta.docsUrl || meta.website || '';
+      if (keyUrl) {
+        const openDocs = await rl.question(`\x1B[90mOpen API key page in browser? (Y/n): \x1B[39m`);
+        if (openDocs.trim().toLowerCase() !== 'n') {
+           openBrowser(keyUrl);
+        }
       }
       
       apiKey = await rl.question(`\n\x1B[90mEnter your ${meta.name} API key (or leave blank to skip): \x1B[39m`);
@@ -164,44 +169,55 @@ export class SetupWizard {
          output.write('\x1B[32m✓ Connected\x1B[39m\n');
          
          let finalModel = meta.defaultModel;
-         if (caps.modelDiscovery) {
-             output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
-             try {
-                 const models = await tempProvider.listModels();
-                 if (models.length > 0) {
-                     output.write('\nAvailable Models:\n');
-                     const displayLimit = Math.min(models.length, 15); // limit display
-                     for (let i = 0; i < displayLimit; i++) {
-                         output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
-                     }
-                     if (models.length > displayLimit) {
-                         output.write(`  ... and ${models.length - displayLimit} more\n`);
-                     }
-                     const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
-                     const mIdx = parseInt(mChoice.trim(), 10);
-                     if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
-                         finalModel = models[mIdx - 1]!.id;
-                     } else {
-                         finalModel = models[0]!.id;
-                     }
+         output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
+         try {
+             const models = await tempProvider.listModels();
+             if (models.length > 0) {
+                 output.write('\nAvailable Models:\n');
+                 const displayLimit = Math.min(models.length, 15);
+                 for (let i = 0; i < displayLimit; i++) {
+                     output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
                  }
-             } catch (err) {
-                 output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
-             }
-         }
+                 if (models.length > displayLimit) {
+                     output.write(`  ... and ${models.length - displayLimit} more\n`);
+                 }
+                  try {
+                    const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
+                    const mIdx = parseInt(mChoice.trim(), 10);
+                    if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
+                        finalModel = models[mIdx - 1]!.id;
+                    } else {
+                        finalModel = models[0]!.id;
+                    }
+                  } catch {
+                    // Non-interactive or pipe mode — keep the provider default
+                  }
+              } else {
+                  output.write('\x1B[33mNo models discovered, using default.\x1B[39m\n');
+              }
+          } catch (err) {
+              output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
+          }
 
-         config.providers[providerId] = {
-           enabled: true,
-           apiKey: apiKey.trim(),
-           defaultModel: finalModel,
+          config.providers[providerId] = {
+            enabled: true,
+            apiKey: apiKey.trim(),
+            defaultModel: finalModel,
          };
-         output.write(`\n\x1B[32mConfiguration saved.\x1B[39m\n`);
+         output.write(`\n\x1B[32m✓ Configuration saved.\x1B[39m\n`);
       } catch (err) {
-         output.write(`\x1B[31m✘ Validation failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
-         const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
-         if (retry.trim().toLowerCase() !== 'y') {
-            return false;
-         }
+          validationFailed = true;
+          output.write(`\x1B[31m✘ Validation failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+          let saveAnyway = false;
+          try {
+            const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
+            saveAnyway = retry.trim().toLowerCase() === 'y';
+          } catch {
+            saveAnyway = false;
+          }
+          if (!saveAnyway) {
+             return false;
+          }
          config.providers[providerId] = {
            enabled: true,
            apiKey: apiKey.trim(),
@@ -226,40 +242,50 @@ export class SetupWizard {
            if (health.status === 'unhealthy') {
               throw new Error(health.message || 'Health check failed');
            }
-           output.write('\x1B[32m✓ Connected\x1B[39m\n');
-           
-           if (caps.modelDiscovery) {
-               output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
-               try {
-                   const models = await tempProvider.listModels();
-                   if (models.length > 0) {
-                       output.write('\nAvailable Models:\n');
-                       const displayLimit = Math.min(models.length, 15);
-                       for (let i = 0; i < displayLimit; i++) {
-                           output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
-                       }
-                       if (models.length > displayLimit) {
-                           output.write(`  ... and ${models.length - displayLimit} more\n`);
-                       }
-                       const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
-                       const mIdx = parseInt(mChoice.trim(), 10);
-                       if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
-                           finalModel = models[mIdx - 1]!.id;
-                       } else {
-                           finalModel = models[0]!.id;
-                       }
-                   }
-               } catch (err) {
-                   output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
-               }
-           }
-       } catch (err) {
-           output.write(`\x1B[31m✘ Connection failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
-           const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
-           if (retry.trim().toLowerCase() !== 'y') {
-              return false;
-           }
-       }
+            output.write('\x1B[32m✓ Connected\x1B[39m\n');
+            
+            output.write('\x1B[90mDiscovering available models...\x1B[39m\n');
+            try {
+                const models = await tempProvider.listModels();
+                if (models.length > 0) {
+                    output.write('\nAvailable Models:\n');
+                    const displayLimit = Math.min(models.length, 15);
+                    for (let i = 0; i < displayLimit; i++) {
+                        output.write(`  \x1B[33m${i + 1}.\x1B[39m ${models[i]!.name || models[i]!.id}\n`);
+                    }
+                    if (models.length > displayLimit) {
+                        output.write(`  ... and ${models.length - displayLimit} more\n`);
+                    }
+                    try {
+                      const mChoice = await rl.question(`\n\x1B[90mSelect model [1-${displayLimit}] (default: 1): \x1B[39m`);
+                      const mIdx = parseInt(mChoice.trim(), 10);
+                      if (!isNaN(mIdx) && mIdx >= 1 && mIdx <= displayLimit) {
+                          finalModel = models[mIdx - 1]!.id;
+                      } else {
+                          finalModel = models[0]!.id;
+                      }
+                    } catch {
+                      // Non-interactive or pipe mode — keep the provider default
+                    }
+                } else {
+                    output.write('\x1B[33mNo models discovered, using default.\x1B[39m\n');
+                }
+            } catch (err) {
+                output.write('\x1B[33mModel discovery failed, using default.\x1B[39m\n');
+            }
+        } catch (err) {
+            output.write(`\x1B[31m✘ Connection failed: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+            let saveAnyway = false;
+            try {
+              const retry = await rl.question('\x1B[33mSave anyway? (y/N): \x1B[39m');
+              saveAnyway = retry.trim().toLowerCase() === 'y';
+            } catch {
+              saveAnyway = false;
+            }
+            if (!saveAnyway) {
+               return false;
+            }
+        }
 
        config.providers[providerId] = {
          enabled: true,
@@ -280,7 +306,114 @@ export class SetupWizard {
 
     this.configManager.save(config);
     output.write(`\n\x1B[32m✓ ${meta.name} configured securely!\x1B[39m\n`);
+
+    // Post-setup test
+    if (!validationFailed) {
+      try {
+        const runTest = await rl.question('\x1B[90mRun test (health → chat → streaming)? (Y/n): \x1B[39m');
+        if (runTest.trim().toLowerCase() !== 'n') {
+          await this.runPostSetupTest(rl, providerId, apiKey, meta.defaultModel);
+        }
+      } catch {
+        output.write('\x1B[33mTest skipped (non-interactive mode).\x1B[39m\n');
+        output.write('\x1B[90m  Run `librecode doctor` or `/provider test` to verify later.\x1B[39m\n');
+      }
+    }
+
     return true;
+  }
+
+  private async runPostSetupTest(
+    rl: readline.Interface,
+    providerId: string,
+    apiKey: string,
+    model: string,
+  ): Promise<void> {
+    const factory = new ProviderFactory(this.registry);
+
+    let provider: OpenAICompatibleProvider;
+    try {
+      provider = factory.create(providerId, {
+        enabled: true,
+        apiKey,
+        defaultModel: model,
+      }) as unknown as OpenAICompatibleProvider;
+    } catch (err) {
+      output.write(`  \x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+      return;
+    }
+
+    const meta = this.registry.get(providerId);
+
+    output.write('\n');
+
+    // 1. Health check
+    output.write(`  \x1B[90m1/3  Health check...\x1B[39m `);
+    try {
+      const health = await provider.health();
+      if (health.status === 'unhealthy') {
+        output.write(`\x1B[31m✘ ${health.message}\x1B[39m\n`);
+        return;
+      }
+      output.write(`\x1B[32m✓\x1B[39m \x1B[90m${health.message}\x1B[39m\n`);
+    } catch (err) {
+      output.write(`\x1B[31m✘ ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+      return;
+    }
+
+    // 2. Chat test
+    output.write(`  \x1B[90m2/3  Chat test...\x1B[39m `);
+    try {
+      const result = await provider.complete({
+        model,
+        messages: [{ role: 'user', content: 'Say OK' }],
+        tools: [],
+        maxTokens: 10,
+        stream: false,
+      });
+      if (result.content) {
+        const preview = result.content.slice(0, 60).replace(/\n/g, '\\n');
+        output.write(`\x1B[32m✓\x1B[39m \x1B[90m"${preview}"\x1B[39m\n`);
+      } else {
+        output.write(`\x1B[33m⚠ No content in response\x1B[39m\n`);
+      }
+    } catch (err) {
+      output.write(`\x1B[31m✘ ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+    }
+
+    // 3. Streaming test
+    if (meta?.supportsStreaming) {
+      output.write(`  \x1B[90m3/3  Streaming test...\x1B[39m `);
+      try {
+        let streamedText = '';
+        await provider.streamComplete(
+          {
+            model,
+            messages: [{ role: 'user', content: 'Say hi' }],
+            tools: [],
+            maxTokens: 10,
+            stream: true,
+          },
+          (event) => {
+            if (event.type === 'text_delta') {
+              streamedText += event.delta;
+            }
+          },
+        );
+        if (streamedText.length > 0) {
+          const preview = streamedText.slice(0, 60).replace(/\n/g, '\\n');
+          output.write(`\x1B[32m✓\x1B[39m \x1B[90m"${preview}"\x1B[39m\n`);
+        } else {
+          output.write(`\x1B[33m⚠ Empty stream\x1B[39m\n`);
+        }
+      } catch (err) {
+        output.write(`\x1B[31m✘ ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
+      }
+    } else {
+      output.write(`  \x1B[90m3/3  Streaming: \x1B[33mnot supported by this provider\x1B[39m\n`);
+    }
+
+    output.write(`\n  \x1B[32m✓ All tests complete!\x1B[39m\n`);
   }
 
   private saveEmpty(): void {

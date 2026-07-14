@@ -3,3 +3,12 @@ dist/
 coverage/
 .env
 *.tsbuildinfo
+*.tgz
+.stryker-tmp/
+.rcode-checkpoints/
+.benchmark-trends/
+packages/providers/src/__tests__/scratch.ts
+packages/providers/src/__tests__/fetch-test.ts
+scripts/
+FINAL_PRODUCTION_REPORT.md
+FINAL_REPORT.md

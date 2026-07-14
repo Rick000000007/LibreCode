@@ -132,6 +132,7 @@ export class FreeProvider extends BaseProvider {
   private cooldowns: Map<string, number> = new Map();
   private healthCache: Map<string, { result: HealthCheckResult; time: number }> = new Map();
   private initialized = false;
+  private skippedEndpoints: FreeModelEndpoint[] = [];
 
   constructor() {
     super();
@@ -268,6 +269,8 @@ export class FreeProvider extends BaseProvider {
       if (key) {
         const provider = this.createProvider(endpoint, key);
         this.registerEndpoint(endpoint.id, provider);
+      } else {
+        this.skippedEndpoints.push(endpoint);
       }
     }
   }
@@ -339,14 +342,16 @@ export class FreeProvider extends BaseProvider {
 
   override async complete(request: CompletionRequest): Promise<CompletionResponse> {
     this.ensureInitialized();
-    let lastError: LlmError | null = null;
     const { endpointId: initialEndpoint, modelName } = this.resolveModel(request);
 
-    // Try the resolved endpoint first, then fallback through the chain
     const tryOrder = [initialEndpoint, ...this.fallbackOrder.filter((id) => id !== initialEndpoint)];
+    const attemptErrors: string[] = [];
 
     for (const endpointId of tryOrder) {
-      if (this.isOnCooldown(endpointId)) continue;
+      if (this.isOnCooldown(endpointId)) {
+        attemptErrors.push(`- ${endpointId}: On cooldown (rate limited or recently failed)`);
+        continue;
+      }
 
       const entry = this.endpoints.get(endpointId);
       if (!entry) continue;
@@ -359,35 +364,29 @@ export class FreeProvider extends BaseProvider {
 
         return result;
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        attemptErrors.push(`- ${entry.info.label}: ${msg}`);
+
         if (err instanceof LlmError) {
-          if (err.code === 'auth_error') {
-            // Auth errors are not transient — skip this endpoint but try others
+          if (err.code === 'auth_error' || err.isRateLimit() || err.isTransient()) {
             this.recordFailure(endpointId);
-            lastError = err;
             continue;
           }
-          if (err.isRateLimit() || err.isTransient()) {
-            this.recordFailure(endpointId);
-            lastError = err;
-            continue;
-          }
-          // Other LlmErrors: try next provider before giving up
           this.recordFailure(endpointId);
-          lastError = err;
           continue;
         }
-        // HttpClient throws LibreError (not LlmError) — treat as transient and try next provider
         if (err instanceof Error) {
           this.recordFailure(endpointId);
-          lastError = LlmError.apiError(err.message || `Provider ${endpointId} failed`);
           continue;
         }
         throw err;
       }
     }
 
-    throw lastError ?? LlmError.unavailable(
-      'All free models exhausted. Check your API keys or try again later.',
+    const skipped = this.skippedEndpoints.map(e => `- ${e.label} (missing ${e.envKey})`).join('\n');
+    const attempted = attemptErrors.join('\n');
+    throw LlmError.unavailable(
+      `All free models exhausted.\n\nSkipped (no API keys configured):\n${skipped || 'None'}\n\nAttempted:\n${attempted || 'None'}`
     );
   }
 
@@ -397,13 +396,16 @@ export class FreeProvider extends BaseProvider {
     options?: { signal?: AbortSignal; timeout?: number }
   ): Promise<void> {
     this.ensureInitialized();
-    let lastError: LlmError | null = null;
     const { endpointId: initialEndpoint, modelName } = this.resolveModel(request);
 
     const tryOrder = [initialEndpoint, ...this.fallbackOrder.filter((id) => id !== initialEndpoint)];
+    const attemptErrors: string[] = [];
 
     for (const endpointId of tryOrder) {
-      if (this.isOnCooldown(endpointId)) continue;
+      if (this.isOnCooldown(endpointId)) {
+        attemptErrors.push(`- ${endpointId}: On cooldown (rate limited or recently failed)`);
+        continue;
+      }
 
       const entry = this.endpoints.get(endpointId);
       if (!entry) continue;
@@ -420,33 +422,25 @@ export class FreeProvider extends BaseProvider {
 
         return;
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        attemptErrors.push(`- ${entry.info.label}: ${msg}`);
+
         if (err instanceof LlmError) {
-          if (err.code === 'auth_error') {
-            this.recordFailure(endpointId);
-            lastError = err;
-            continue;
-          }
-          if (err.isRateLimit() || err.isTransient()) {
-            this.recordFailure(endpointId);
-            lastError = err;
-            continue;
-          }
           this.recordFailure(endpointId);
-          lastError = err;
           continue;
         }
-        // HttpClient throws LibreError (not LlmError) — treat as transient and try next provider
         if (err instanceof Error) {
           this.recordFailure(endpointId);
-          lastError = LlmError.apiError(err.message || `Provider ${endpointId} failed`);
           continue;
         }
         throw err;
       }
     }
 
-    throw lastError ?? LlmError.unavailable(
-      'All free models exhausted. Check your API keys or try again later.',
+    const skipped = this.skippedEndpoints.map(e => `- ${e.label} (missing ${e.envKey})`).join('\n');
+    const attempted = attemptErrors.join('\n');
+    throw LlmError.unavailable(
+      `All free models exhausted.\n\nSkipped (no API keys configured):\n${skipped || 'None'}\n\nAttempted:\n${attempted || 'None'}`
     );
   }
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "coverageAnalysis": "perTest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "mutate": [
+    "src/security.ts",
+    "src/enterprise-security.ts",
+    "src/ast-editor/index.ts",
+    "src/ast-editor/registry.ts",
+    "src/ast-editor/typescript.ts",
+    "src/ast-editor/python.ts",
+    "src/ast-editor/rust.ts",
+    "src/ast-editor/go.ts",
+    "src/ast-editor/ts-morph.ts",
+    "src/rag.ts",
+    "src/orchestrator.ts",
+    "src/validation.ts"
+  ],
+  "reporters": ["html", "json", "progress"],
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 60
+  },
+  "tempDir": ".stryker-tmp",
+  "inPlace": false,
+  "cleanTempDir": true,
+  "concurrency": 4,
+  "timeoutMs": 30000
+}

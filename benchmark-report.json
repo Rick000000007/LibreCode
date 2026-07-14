@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-07-13T22:11:31.611Z",
+  "baseline": {
+    "timestamp": 1783974456719,
+    "commit": "1ce02e8",
+    "results": [
+      { "name": "AST: TypeScript symbol extraction (1000+ lines)", "hz": 977.77, "mean": 0.7934, "p99": 3.6199, "samples": 0 },
+      { "name": "AST: TypeScript rename symbol", "hz": 13967.31, "mean": 0.0543, "p99": 0.1238, "samples": 0 },
+      { "name": "AST: Python symbol extraction (1000+ lines)", "hz": 2399.61, "mean": 0.3305, "p99": 2.2754, "samples": 0 },
+      { "name": "RAG: TfIdfVectorizer fit (100 docs)", "hz": 2765.44, "mean": 0.3113, "p99": 1.4742, "samples": 0 },
+      { "name": "RAG: VectorIndex search (10k chunks)", "hz": 14.6965, "mean": 57.9568, "p99": 77.4443, "samples": 0 },
+      { "name": "Checkpoint: createDiff (1000-line files)", "hz": 54.1305, "mean": 17.6066, "p99": 24.7445, "samples": 0 },
+      { "name": "Memory: recall from 10k entries", "hz": 6.7469, "mean": 140.77, "p99": 156.05, "samples": 0 },
+      { "name": "Validation: validate 1k files", "hz": 0, "mean": 0, "p99": 0, "samples": 0 }
+    ]
+  },
+  "current": {
+    "timestamp": "2026-07-13T22:11:31.613Z",
+    "results": [
+      { "name": "AST: TypeScript symbol extraction (1000+ lines)", "hz": 604.80, "mean": 1.6534, "p99": 5.8359, "samples": 303 },
+      { "name": "AST: TypeScript rename symbol", "hz": 9390.52, "mean": 0.1065, "p99": 0.2015, "samples": 4696 },
+      { "name": "AST: Python symbol extraction (1000+ lines)", "hz": 1608.59, "mean": 0.6217, "p99": 2.6373, "samples": 805 },
+      { "name": "RAG: TfIdfVectorizer fit (100 docs)", "hz": 1857.05, "mean": 0.5385, "p99": 1.6291, "samples": 929 },
+      { "name": "RAG: VectorIndex search (10k chunks)", "hz": 9.7086, "mean": 103.00, "p99": 117.11, "samples": 10 },
+      { "name": "Checkpoint: createDiff (1000-line files)", "hz": 34.5603, "mean": 28.9349, "p99": 35.6222, "samples": 18 },
+      { "name": "Memory: recall from 10k entries", "hz": 4.6324, "mean": 215.87, "p99": 223.85, "samples": 10 }
+    ]
+  },
+  "regressions": [],
+  "allPassed": true
+}

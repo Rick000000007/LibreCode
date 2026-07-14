@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { TuiEngine } from './tui.js';
 import { Sidebar } from './sidebar.js';
 import { getTheme } from './theme.js';
@@ -61,7 +62,7 @@ export class Layout {
 
     if (width <= 0) return;
 
-    const dir = cwd.split('/').pop() || cwd;
+    const dir = path.basename(cwd) || cwd;
     const git = gitBranch ? ` ${theme.git}\u{2447} ${gitBranch}${theme.reset}` : '';
     const tokens = tokenPct > 0 ? ` ${theme.dim}ctx: ${tokenPct}%${theme.reset}` : '';
     const prov = ` ${theme.provider}${theme.bold}${provider}${theme.reset}${theme.dim}/${theme.reset}${theme.model}${model}${theme.reset}`;

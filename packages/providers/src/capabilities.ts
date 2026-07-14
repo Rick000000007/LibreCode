@@ -5,11 +5,13 @@ import { HttpClient } from './http-client.js';
 export async function detectCapabilities(
   httpClient: HttpClient,
   model: string,
+  chatPath = '/chat/completions',
+  modelsPath = '/models',
 ): Promise<ProviderCapabilities> {
   const caps = createDefaultCapabilities();
 
   try {
-    const modelResult = await httpClient.request('GET', '/models');
+    const modelResult = await httpClient.request('GET', modelsPath);
     if (modelResult.status === 200) {
       caps.modelDiscovery = true;
     }
@@ -25,7 +27,7 @@ export async function detectCapabilities(
       stream: false,
     };
 
-    const result = await httpClient.request('POST', '/chat/completions', testBody);
+    const result = await httpClient.request('POST', chatPath, testBody);
     caps.chatCompletions = result.status === 200;
 
     if (caps.chatCompletions && result.status === 200) {
@@ -44,18 +46,18 @@ export async function detectCapabilities(
   }
 
   if (caps.chatCompletions) {
-    caps.streaming = await testStreaming(httpClient, model);
-    caps.toolCalling = await testToolCalling(httpClient, model);
-    caps.jsonMode = await testJsonMode(httpClient, model);
-    caps.vision = await testVision(httpClient, model);
+    caps.streaming = await testStreaming(httpClient, model, chatPath);
+    caps.toolCalling = await testToolCalling(httpClient, model, chatPath);
+    caps.jsonMode = await testJsonMode(httpClient, model, chatPath);
+    caps.vision = await testVision(httpClient, model, chatPath);
   }
 
   return caps;
 }
 
-async function testStreaming(httpClient: HttpClient, model: string): Promise<boolean> {
+async function testStreaming(httpClient: HttpClient, model: string, chatPath: string): Promise<boolean> {
   try {
-    const result = await httpClient.request('POST', '/chat/completions', {
+    const result = await httpClient.request('POST', chatPath, {
       model,
       messages: [{ role: 'user', content: 'hi' }],
       max_tokens: 1,
@@ -67,9 +69,9 @@ async function testStreaming(httpClient: HttpClient, model: string): Promise<boo
   }
 }
 
-async function testToolCalling(httpClient: HttpClient, model: string): Promise<boolean> {
+async function testToolCalling(httpClient: HttpClient, model: string, chatPath: string): Promise<boolean> {
   try {
-    const result = await httpClient.request('POST', '/chat/completions', {
+    const result = await httpClient.request('POST', chatPath, {
       model,
       messages: [{ role: 'user', content: 'what is 2+2' }],
       tools: [
@@ -102,9 +104,9 @@ async function testToolCalling(httpClient: HttpClient, model: string): Promise<b
   }
 }
 
-async function testJsonMode(httpClient: HttpClient, model: string): Promise<boolean> {
+async function testJsonMode(httpClient: HttpClient, model: string, chatPath: string): Promise<boolean> {
   try {
-    const result = await httpClient.request('POST', '/chat/completions', {
+    const result = await httpClient.request('POST', chatPath, {
       model,
       messages: [{ role: 'user', content: 'say {"ok": true}' }],
       response_format: { type: 'json_object' },
@@ -117,9 +119,9 @@ async function testJsonMode(httpClient: HttpClient, model: string): Promise<bool
   }
 }
 
-async function testVision(httpClient: HttpClient, model: string): Promise<boolean> {
+async function testVision(httpClient: HttpClient, model: string, chatPath: string): Promise<boolean> {
   try {
-    const result = await httpClient.request('POST', '/chat/completions', {
+    const result = await httpClient.request('POST', chatPath, {
       model,
       messages: [
         {

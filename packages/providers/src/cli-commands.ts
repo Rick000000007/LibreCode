@@ -5,6 +5,7 @@ import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
+import type { ModelInfo } from './base.js';
 
 export function printProviderList(
   config: LibreConfig,
@@ -463,7 +464,8 @@ export async function handleProviderModels(
   } else {
     output.write(`\x1B[32m✓ ${models.length} models available\x1B[39m\n\n`);
     for (const model of models.slice(0, 30)) {
-      output.write(`  \x1B[33m- ${model}\x1B[39m\n`);
+      const m = model as ModelInfo;
+      output.write(`  \x1B[33m- ${m.id}\x1B[39m \x1B[90m(${m.contextWindow.toLocaleString()} ctx)\x1B[39m\n`);
     }
     if (models.length > 30) {
       output.write(`  \x1B[90m... and ${models.length - 30} more\x1B[39m\n`);

@@ -1,5 +1,5 @@
 import { globalCommandRegistry, type Command, type CommandContext } from './command-framework.js';
-import { Doctor } from 'librecode-providers';
+import { Doctor, ConfigurationManager } from 'librecode-providers';
 import { getLogger } from 'librecode-ui';
 
 // 1. help
@@ -34,7 +34,16 @@ const helpCommand: Command = {
       return;
     }
 
-    ctx.tuiApp.openCommandPalette();
+    const commands = globalCommandRegistry.getAllCommands();
+    const lines = ['\x1B[1mAvailable Commands:\x1B[22m', ''];
+    for (const cmd of commands) {
+      const name = cmd.metadata.name;
+      const desc = cmd.metadata.description;
+      const aliases = cmd.metadata.aliases?.length ? ` (${cmd.metadata.aliases.join(', ')})` : '';
+      lines.push(`  \x1B[33m/${name.padEnd(15)}\x1B[39m ${desc}${aliases ? `\x1B[90m${aliases}\x1B[39m` : ''}`);
+    }
+    lines.push('', '\x1B[90m  Type /help <command> for details on a specific command.\x1B[39m');
+    ctx.tuiApp.addToConversation(lines.join('\n'), 'system');
   },
 };
 
@@ -150,13 +159,23 @@ const doctorCommand: Command = {
   },
   async execute(ctx: CommandContext) {
     const doctor = new Doctor();
-    const report = await doctor.run();
+    const start = Date.now();
+    const report = await doctor.run((msg: string) => {
+      if (ctx.tuiApp) {
+        ctx.tuiApp.addToConversation(`\x1B[90m${msg}\x1B[39m`, 'system');
+        ctx.tuiApp.render();
+      } else {
+        process.stdout.write(`\x1B[90m${msg}\x1B[39m\n`);
+      }
+    });
+    const duration = ((Date.now() - start) / 1000).toFixed(1);
     if (ctx.tuiApp) {
       const lines = report.checks.map((c) => {
         const icon = c.status === 'passed' ? '\u2714' : c.status === 'warning' ? '\u26A0' : '\u2718';
         const color = c.status === 'passed' ? '\x1B[32m' : c.status === 'warning' ? '\x1B[33m' : '\x1B[31m';
         return `${color}${icon}\x1B[39m ${c.name}: ${c.message}`;
       });
+      lines.push(`\x1B[90mCompleted in ${duration} seconds.\x1B[39m`);
       ctx.tuiApp.addToConversation(lines.join('\n'), 'system');
     }
   },
@@ -233,6 +252,11 @@ const providerCommand: Command = {
             const wizard = new SetupWizard(new ProviderRegistry(), new ConfigurationManager());
             await wizard.configureProviderInteractive(meta.id);
             await ctx.providerManager!.initialize();
+            const newActive = ctx.providerManager!.getActiveProvider();
+            if (newActive) {
+               ctx.tuiApp!.setProviderInfo(newActive.id, newActive.model);
+               ctx.agent?.setProvider(ctx.providerManager!.getProvider(), newActive.id, newActive.model);
+            }
             ctx.tuiApp!.resume();
           } else {
             const config = ctx.providerManager!.getConfig();
@@ -243,6 +267,7 @@ const providerCommand: Command = {
             const newActive = ctx.providerManager!.getActiveProvider();
             if (newActive) {
                ctx.tuiApp!.setProviderInfo(newActive.id, newActive.model);
+               ctx.agent?.setProvider(ctx.providerManager!.getProvider(), newActive.id, newActive.model);
             }
           }
         }
@@ -287,6 +312,7 @@ const modelCommand: Command = {
        }
        ctx.tuiApp!.addToConversation(`\x1B[90mSwitched model to \x1B[33m${modelArg}\x1B[39m\x1B[39m`, 'system');
        ctx.tuiApp!.setProviderInfo(activeInfo.id, modelArg);
+       ctx.agent?.setProvider(ctx.providerManager!.getProvider(), activeInfo.id, modelArg);
        return;
     }
 
@@ -317,6 +343,7 @@ const modelCommand: Command = {
           }
           ctx.tuiApp!.addToConversation(`\x1B[90mSwitched to model \x1B[33m${m.name || m.id}\x1B[39m.\x1B[39m`, 'system');
           ctx.tuiApp!.setProviderInfo(activeInfo.id, m.name || m.id);
+          ctx.agent?.setProvider(ctx.providerManager!.getProvider(), activeInfo.id, m.id);
         }
       }));
       ctx.tuiApp.openCommandPalette(items);
@@ -387,7 +414,6 @@ const configCommand: Command = {
   },
   execute(ctx: CommandContext) {
     if (ctx.tuiApp) {
-      const { ConfigurationManager } = require('librecode-providers');
       const configMgr = new ConfigurationManager();
       const configPath = configMgr.configFilePath();
       const isConfigured = configMgr.isConfigured();
@@ -487,42 +513,3 @@ globalCommandRegistry.register(logsCommand);
 globalCommandRegistry.register(historyCommand);
 globalCommandRegistry.register(setupCommand);
 
-const repoCommands = [
-  { name: 'analyze', desc: 'Analyze the repository structure and purpose', prompt: 'Please analyze this repository, explain its purpose, and summarize its main components.' },
-  { name: 'architecture', desc: 'Explain the repository architecture', prompt: 'Explain the high-level architecture of this repository, including key directories and data flow.' },
-  { name: 'dependencies', desc: 'List main dependencies', prompt: 'What are the main dependencies and libraries used in this project? Explain what each is used for.' },
-  { name: 'tests', desc: 'Find and summarize tests', prompt: 'Where are the tests located? How are they structured, and what testing frameworks are used?' },
-  { name: 'todos', desc: 'Find TODOs in the codebase', prompt: 'Search the codebase for TODO, FIXME, or pending tasks and summarize them.' },
-  { name: 'modules', desc: 'List key modules', prompt: 'What are the key modules or packages in this repository? Briefly explain each.' },
-  { name: 'search', desc: 'Search the codebase for a term', prompt: 'Search the codebase for: ' },
-  { name: 'explain', desc: 'Explain a specific file or concept', prompt: 'Please explain the following: ' },
-];
-
-for (const cmd of repoCommands) {
-  globalCommandRegistry.register({
-    metadata: {
-      name: cmd.name,
-      description: cmd.desc,
-      usage: `/${cmd.name} [args]`,
-      examples: [`/${cmd.name}`],
-    },
-    execute(ctx: CommandContext) {
-      if (ctx.tuiApp) {
-        // We simulate sending a message by calling onSubmit or similar.
-        // Wait, TuiApp doesn't expose onSubmit. But we can trigger the agent via the CLI index.ts by returning something or emitting an event.
-        // For now, we will add the message to the input handler and submit it.
-        const input = ctx.tuiApp.getInput();
-        if (input) {
-           const fullPrompt = cmd.prompt + ctx.args.join(' ');
-           // Hack: simulate user typing and pressing enter
-           ctx.tuiApp.addToConversation(fullPrompt, 'user');
-           // The command framework doesn't support async agent triggering directly from here unless we pass it.
-           // Since we can't easily trigger the workflow engine from here without a circular dependency, 
-           // we'll instruct the user to press enter.
-           ctx.tuiApp.addToConversation(`\x1B[90m(Press UP arrow to retrieve the prompt and press ENTER to run it)\x1B[39m`, 'system');
-           input.setBuffer(fullPrompt);
-        }
-      }
-    }
-  });
-}

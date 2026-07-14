@@ -41,6 +41,10 @@ const SENSITIVE_PATHS = [
   '/etc/sudoers',
   '/root/.ssh',
   '/.git/config',
+  'C:\\Windows\\System32\\config\\SAM',
+  'C:\\Windows\\System32\\config\\SYSTEM',
+  'C:\\Windows\\System32\\config\\SECURITY',
+  'C:\\Users\\',
 ];
 
 export type SafetyLevel =
