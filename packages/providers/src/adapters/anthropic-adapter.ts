@@ -105,11 +105,18 @@ export class AnthropicAdapter implements ProviderAdapter {
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
-      while (true) {
+      let streamDone = false;
+      while (!streamDone) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          streamDone = true;
+          break;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+        }
+
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
