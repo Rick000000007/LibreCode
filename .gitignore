@@ -10,5 +10,6 @@ coverage/
 packages/providers/src/__tests__/scratch.ts
 packages/providers/src/__tests__/fetch-test.ts
 scripts/
+!packages/core/scripts/benchmark-ci.ts
 FINAL_PRODUCTION_REPORT.md
 FINAL_REPORT.md
