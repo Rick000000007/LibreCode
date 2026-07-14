@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 export interface BenchmarkResult {
   name: string;
@@ -45,7 +46,8 @@ export function saveBaseline(baselinePath: string, results: BenchmarkResult[], c
 
 export function parseVitestBenchOutput(output: string): BenchmarkResult[] {
   const results: BenchmarkResult[] = [];
-  const lines = output.split('\n');
+  const clean = stripVTControlCharacters(output);
+  const lines = clean.split('\n');
   for (const line of lines) {
     const match = line.match(/^\s*·\s+(.+?)\s+([\d,.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
     if (match) {
