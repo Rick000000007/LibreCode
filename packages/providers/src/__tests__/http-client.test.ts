@@ -103,8 +103,9 @@ describe('HttpClient', () => {
 
       const client = new HttpClient({ baseUrl, maxRetries: 1, retryDelay: 1 });
       
-      await expect(client.request('POST', '/test', { data: 'val' }))
-        .rejects.toThrow(/Internal Server Error/);
+      const result = await client.request('POST', '/test', { data: 'val' });
+      expect(result.status).toBe(500);
+      expect(result.body).toBe('Internal Server Error');
       
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -165,7 +166,9 @@ describe('HttpClient', () => {
       globalThis.fetch = fetchMock;
 
       const client = new HttpClient({ baseUrl, maxRetries: 2, retryDelay: 1 });
-      await expect(client.request('GET', '/test')).rejects.toThrow();
+      const result = await client.request('GET', '/test');
+      expect(result.status).toBe(500);
+      expect(result.body).toBe('Persistent Error');
       
       // 1 initial + 2 retries = 3 calls
       expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -197,10 +200,11 @@ describe('HttpClient', () => {
       });
 
       const client = new HttpClient({ baseUrl });
-      // The request method should throw for 401, and we check that the error message
-      // came from the buffered text.
-      await expect(client.request('GET', '/test', undefined, true))
-        .rejects.toThrow(/Unauthorized Access/);
+      // The request method returns the non-2xx response so the caller can
+      // convert it to the appropriate error type via handleError().
+      const result = await client.request('GET', '/test', undefined, true);
+      expect(result.status).toBe(401);
+      expect(result.body).toBe('Unauthorized Access');
     });
   });
 

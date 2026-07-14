@@ -7,6 +7,8 @@ import type {
 
 export type BoxFuture<T> = Promise<T>;
 
+export type HealthStatus = { status: 'healthy' | 'degraded' | 'unhealthy'; message?: string };
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -49,7 +51,7 @@ export interface LLMProvider {
 
   // Lifecycle methods
   initialize(options?: { signal?: AbortSignal }): Promise<void>;
-  health(options?: { signal?: AbortSignal }): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }>;
+  health(options?: { signal?: AbortSignal }): Promise<HealthStatus>;
   shutdown(): Promise<void>;
   embeddings(text: string, options?: { signal?: AbortSignal }): Promise<number[]>;
 }
@@ -70,7 +72,7 @@ export abstract class BaseProvider implements LLMProvider {
     // Default no-op
   }
 
-  async health(options?: { signal?: AbortSignal }): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }> {
+  async health(options?: { signal?: AbortSignal }): Promise<HealthStatus> {
     return { status: 'healthy' };
   }
 

@@ -14,6 +14,11 @@ import { ConversationStore } from './conversation-store.js';
 import { ProviderDiscovery, DiscoveredProvider } from './provider-discovery.js';
 import { LayeredConfig } from './configuration.js';
 import { RoutingIntent } from './model-metadata.js';
+import { PluginLoader } from './plugin-loader.js';
+import { AuthManager } from './auth-manager.js';
+import { ConnectionPool } from './connection-pool.js';
+import type { ProviderAdapter } from './types/adapter.js';
+import { AdapterBridge } from './adapter-bridge.js';
 
 export interface ActiveProviderInfo {
   id: string;
@@ -30,6 +35,12 @@ export class ProviderManager {
   private freeProvider: FreeProvider | null = null;
   private currentProvider: ActiveProviderInfo | null;
 
+  // Adapter architecture systems
+  private pluginLoader: PluginLoader;
+  private authManager: AuthManager;
+  private connectionPool: ConnectionPool;
+  private adapters = new Map<string, ProviderAdapter>();
+
   // New architecture systems
   private modelRegistry: ModelRegistry;
   private autoRouter: AutoRouter;
@@ -44,11 +55,13 @@ export class ProviderManager {
     this.configManager = new ConfigurationManager();
     this.layeredConfig = new LayeredConfig();
     this.registry = new ProviderRegistry();
-    this.factory = new ProviderFactory(this.registry);
+    this.connectionPool = new ConnectionPool();
+    this.authManager = new AuthManager();
+    this.pluginLoader = new PluginLoader();
+    this.factory = new ProviderFactory(this.registry, this.pluginLoader, this.authManager);
     this.router = new ProviderRouter();
     this.currentProvider = null;
 
-    // Initialize new architecture
     this.modelRegistry = new ModelRegistry();
     this.healthMonitor = new HealthMonitor();
     this.streamingEngine = new StreamingEngine();
@@ -62,7 +75,7 @@ export class ProviderManager {
       this.conversationStore,
       this.factory,
     );
-    this.providerDiscovery = new ProviderDiscovery(this.modelRegistry);
+    this.providerDiscovery = new ProviderDiscovery(this.modelRegistry, this.factory);
   }
 
   configFilePath(): string {
@@ -113,6 +126,26 @@ export class ProviderManager {
     return this.conversationStore;
   }
 
+  getPluginLoader(): PluginLoader {
+    return this.pluginLoader;
+  }
+
+  getAuthManager(): AuthManager {
+    return this.authManager;
+  }
+
+  getConnectionPool(): ConnectionPool {
+    return this.connectionPool;
+  }
+
+  getAdapter(id: string): ProviderAdapter | undefined {
+    return this.adapters.get(id);
+  }
+
+  listAdapters(): ProviderAdapter[] {
+    return Array.from(this.adapters.values());
+  }
+
   getDiscoveredProviders(): DiscoveredProvider[] {
     return [...this._discoveredProviders];
   }
@@ -126,16 +159,23 @@ export class ProviderManager {
     const config = this.layeredConfig.merge();
     const defaultProvider = config.defaultProvider ?? 'free';
 
+    // Discover plugins from npm
+    await this.discoverPlugins();
+
     // Run auto-discovery
     const discovered = await this.discoverProviders();
 
-    // Register discovered providers with health monitor
+    // Register discovered providers with health monitor and adapter map
     for (const dp of discovered) {
       this.healthMonitor.register(dp.id, dp.provider);
       this.modelRegistry.discoverFromProvider(dp.id, dp.provider).catch(() => {});
+      const bridge = dp.provider as AdapterBridge;
+      if (bridge?.getAdapter) {
+        this.adapters.set(dp.id, bridge.getAdapter());
+      }
     }
 
-    // Register built-in providers from config
+    // Register configured providers from config
     const configProviders = this.configManager.load().providers ?? {};
     for (const [name, entry] of Object.entries(configProviders)) {
       if (!entry.enabled) continue;
@@ -144,6 +184,10 @@ export class ProviderManager {
         const provider = this.factory.create(name, { ...entry, enabled: true });
         this.healthMonitor.register(name, provider);
         this.modelRegistry.discoverFromProvider(name, provider).catch(() => {});
+        const bridge = provider as AdapterBridge;
+        if (bridge?.getAdapter) {
+          this.adapters.set(name, bridge.getAdapter());
+        }
       } catch {
         continue;
       }
@@ -157,6 +201,17 @@ export class ProviderManager {
       return this.initializeFree();
     }
     return this.initializeSingle(defaultProvider);
+  }
+
+  private async discoverPlugins(): Promise<void> {
+    try {
+      const npmPlugins = await this.pluginLoader.discoverNpmPlugins();
+      for (const result of npmPlugins) {
+        if (result.error) continue;
+        this.pluginLoader.getLoaded();
+      }
+    } catch {
+    }
   }
 
   private async initializeSingle(id: string): Promise<ActiveProviderInfo | null> {
@@ -221,8 +276,7 @@ export class ProviderManager {
         type: 'free',
       };
 
-      // Use auto-router for model routing within free provider
-      const routingConfig = enrichedConfig.routing ?? {};
+      const routingConfig = enrichedConfig.routing ?? { intent: 'best-free' as string };
       this.autoRouter.setOptions({
         preferFree: true,
         defaultIntent: (routingConfig.intent as RoutingIntent) ?? 'best-free',
@@ -343,7 +397,6 @@ export class ProviderManager {
     );
   }
 
-  // Delegate health checks
   getProviderHealthStatus(providerId: string): 'healthy' | 'degraded' | 'unhealthy' | 'unknown' {
     return this.healthMonitor.getStatus(providerId);
   }
@@ -355,5 +408,7 @@ export class ProviderManager {
   destroy(): void {
     this.healthMonitor.stop();
     this.modelRegistry.stopPeriodicDiscovery();
+    this.connectionPool.destroy();
+    this.adapters.clear();
   }
 }

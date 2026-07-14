@@ -260,10 +260,7 @@ export class HttpClient {
             lastError = new Error(`HTTP ${result.status}: ${(result.body as string).slice(0, 100)}`);
             continue;
           }
-          const errorMsg = classifyError(result.status, result.body as string);
-          lastError = new Error(errorMsg);
-          (lastError as any).statusCode = result.status;
-          throw lastError;
+          return result;
         }
 
         result.diagnostics = diag;

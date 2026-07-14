@@ -2,11 +2,12 @@ import type { LLMProvider } from './base.js';
 
 export type { BoxFuture, LLMProvider, LlmErrorCode } from './base.js';
 export { BaseProvider, LlmError, createUsage } from './base.js';
+export type { HealthStatus, ModelInfo } from './base.js';
 
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 export { OpenAICompatibleProvider };
 export { HttpClient, createHttpClient } from './http-client.js';
-export { detectCapabilities } from './capabilities.js';
+export { detectCapabilities, capabilitiesFromDescriptor } from './capabilities.js';
 
 // Re-export individual providers for backward compatibility
 export { OpenAIProvider } from './openai.js';
@@ -56,6 +57,34 @@ export { ProviderDiscovery } from './provider-discovery.js';
 export type { DiscoveredProvider } from './provider-discovery.js';
 export { LayeredConfig } from './configuration.js';
 export type { EnrichedConfig } from './configuration.js';
+
+// Adapter architecture exports
+export { AdapterBridge } from './adapter-bridge.js';
+export { PluginLoader } from './plugin-loader.js';
+export type { PluginDiscoveryResult } from './plugin-loader.js';
+export { AuthManager } from './auth-manager.js';
+export { ConnectionPool } from './connection-pool.js';
+export { withRetry, isRetryableStatus } from './retry.js';
+export type { RetryConfig } from './retry.js';
+export { BUILTIN_PROVIDERS } from './provider-descriptors.js';
+
+export type {
+  ProviderAdapter,
+  ProviderPlugin,
+} from './types/adapter.js';
+export type {
+  ProviderDescriptor,
+  ProviderConfig,
+  ProviderCategory,
+  Capability,
+  Protocol,
+  AuthType,
+} from './types/provider-descriptor.js';
+
+// Adapter implementations
+export { OpenAICompatibleAdapter } from './adapters/openai-compatible-adapter.js';
+export type { OpenAICompatibleAdapterOptions } from './adapters/openai-compatible-adapter.js';
+export { AnthropicAdapter } from './adapters/anthropic-adapter.js';
 
 export function createProvider(
   name: string,

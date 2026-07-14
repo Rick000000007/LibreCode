@@ -1,7 +1,10 @@
 import * as http from 'node:http';
 import type { LLMProvider } from './base.js';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { ModelRegistry } from './model-registry.js';
+import { ProviderFactory } from './provider-factory.js';
+import { AdapterBridge } from './adapter-bridge.js';
+import { BUILTIN_PROVIDERS } from './provider-descriptors.js';
+import { OpenAICompatibleAdapter } from './adapters/openai-compatible-adapter.js';
 
 export interface DiscoveredProvider {
   id: string;
@@ -13,9 +16,11 @@ export interface DiscoveredProvider {
 
 export class ProviderDiscovery {
   private registry: ModelRegistry;
+  private factory: ProviderFactory;
 
-  constructor(registry: ModelRegistry) {
+  constructor(registry: ModelRegistry, factory?: ProviderFactory) {
     this.registry = registry;
+    this.factory = factory ?? new ProviderFactory(undefined as any);
   }
 
   async discoverAll(): Promise<DiscoveredProvider[]> {
@@ -33,7 +38,6 @@ export class ProviderDiscovery {
   private async discoverLocal(): Promise<DiscoveredProvider[]> {
     const results: DiscoveredProvider[] = [];
 
-    // Ollama
     const ollamaEndpoint = process.env['OLLAMA_ENDPOINT'] ?? 'http://localhost:11434/v1';
     const ollamaAvailable = await this.checkEndpoint(ollamaEndpoint);
     if (ollamaAvailable) {
@@ -41,7 +45,6 @@ export class ProviderDiscovery {
       results.push({ id: 'ollama', name: 'Ollama (Local)', provider, source: 'local', baseUrl: ollamaEndpoint });
     }
 
-    // LM Studio
     const lmStudioEndpoint = process.env['LM_STUDIO_ENDPOINT'] ?? 'http://localhost:1234/v1';
     const lmStudioAvailable = await this.checkEndpoint(lmStudioEndpoint);
     if (lmStudioAvailable) {
@@ -49,7 +52,6 @@ export class ProviderDiscovery {
       results.push({ id: 'lm-studio', name: 'LM Studio', provider, source: 'local', baseUrl: lmStudioEndpoint });
     }
 
-    // Generic local OpenAI-compatible
     const customEndpoint = process.env['LOCAL_API_ENDPOINT'];
     if (customEndpoint) {
       const available = await this.checkEndpoint(customEndpoint);
@@ -78,13 +80,20 @@ export class ProviderDiscovery {
     for (const mapping of envMappings) {
       const key = process.env[mapping.var];
       if (key) {
-        const provider = new OpenAICompatibleProvider({
-          name: mapping.id,
+        const descriptor = BUILTIN_PROVIDERS.find((p) => p.id === mapping.id);
+        const caps = descriptor?.capabilities ?? ['chat', 'streaming', 'tools'];
+        const authType = descriptor?.authType ?? { type: 'bearer' as const, envVar: mapping.var };
+
+        const adapter = new OpenAICompatibleAdapter({
+          providerId: mapping.id,
           baseUrl: mapping.baseUrl,
-          apiKey: key,
           defaultModel: mapping.model,
-          timeout: 30000,
+          apiKey: key,
+          authType,
+          capabilities: caps,
         });
+
+        const provider = new AdapterBridge(adapter, mapping.model, caps);
         results.push({ id: mapping.id, name: mapping.name, provider, source: 'env', baseUrl: mapping.baseUrl });
       }
     }
@@ -93,21 +102,25 @@ export class ProviderDiscovery {
   }
 
   private createOllamaProvider(endpoint: string): LLMProvider {
-    return new OpenAICompatibleProvider({
-      name: 'ollama',
-      baseUrl: endpoint,
-      defaultModel: 'llama3.2',
-      timeout: 60000,
-    }) as unknown as LLMProvider;
+    return this.createLocalProvider('ollama', endpoint);
   }
 
   private createLocalProvider(name: string, endpoint: string): LLMProvider {
-    return new OpenAICompatibleProvider({
-      name,
+    const descriptor = BUILTIN_PROVIDERS.find((p) => p.id === name);
+    const caps = descriptor?.capabilities ?? ['chat', 'streaming'];
+    const authType = descriptor?.authType ?? { type: 'none' as const };
+
+    const adapter = new OpenAICompatibleAdapter({
+      providerId: name,
       baseUrl: endpoint,
       defaultModel: 'gpt-4o-mini',
-      timeout: 30000,
-    }) as unknown as LLMProvider;
+      apiKey: undefined,
+      authType,
+      capabilities: caps,
+      timeout: 60000,
+    });
+
+    return new AdapterBridge(adapter, 'gpt-4o-mini', caps);
   }
 
   private checkEndpoint(url: string): Promise<boolean> {
