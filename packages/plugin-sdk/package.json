@@ -1,6 +1,6 @@
 {
   "name": "librecode-plugin-sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "LibreCode Provider Plugin SDK — build custom provider adapters",
   "type": "module",
   "main": "dist/index.js",
@@ -11,12 +11,19 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["librecode", "provider", "plugin", "sdk"],
+  "keywords": [
+    "librecode",
+    "provider",
+    "plugin",
+    "sdk"
+  ],
   "dependencies": {
     "librecode-types": "workspace:*"
   },
