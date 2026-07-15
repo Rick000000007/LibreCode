@@ -48,29 +48,29 @@ importers:
   packages/cli:
     dependencies:
       librecode-config:
-        specifier: workspace:*
-        version: link:../config
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-memory:
-        specifier: workspace:*
-        version: link:../memory
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-providers:
-        specifier: workspace:*
-        version: link:../providers
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-tools:
-        specifier: workspace:*
-        version: link:../tools
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-ui:
-        specifier: workspace:*
-        version: link:../ui
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-utils:
-        specifier: workspace:*
-        version: link:../utils
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -88,8 +88,8 @@ importers:
   packages/config:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -110,20 +110,20 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
       librecode-memory:
-        specifier: workspace:*
-        version: link:../memory
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-providers:
-        specifier: workspace:*
-        version: link:../providers
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-tools:
-        specifier: workspace:*
-        version: link:../tools
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-utils:
-        specifier: workspace:*
-        version: link:../utils
+        specifier: ^1.2.1
+        version: 1.2.2
       ts-morph:
         specifier: ^28.0.0
         version: 28.0.0
@@ -153,11 +153,11 @@ importers:
   packages/memory:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-utils:
-        specifier: workspace:*
-        version: link:../utils
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -172,8 +172,8 @@ importers:
   packages/plugin-sdk:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -182,14 +182,14 @@ importers:
   packages/providers:
     dependencies:
       librecode-config:
-        specifier: workspace:*
-        version: link:../config
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-utils:
-        specifier: workspace:*
-        version: link:../utils
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -204,11 +204,11 @@ importers:
   packages/tools:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
       librecode-utils:
-        specifier: workspace:*
-        version: link:../utils
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -235,8 +235,8 @@ importers:
   packages/ui:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -251,8 +251,8 @@ importers:
   packages/utils:
     dependencies:
       librecode-types:
-        specifier: workspace:*
-        version: link:../types
+        specifier: ^1.2.1
+        version: 1.2.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.9
@@ -1966,6 +1966,38 @@ packages:
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
+
+  librecode-config@1.2.2:
+    resolution: {integrity: sha512-GB/Kmdt2HCdpNzWGhOmQG4H0sfT6u97EXT8+hIkkgR9ZebGMnwQdWl3uexlq1LmaVnzFzss0r2NNks8jTuIw4A==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-core@1.2.2:
+    resolution: {integrity: sha512-r6+0XMBfne3J4N1K9iy3yRM7np2zJLMeyiFh2eMEzUrQzpfJJuP4S8CmC/f0WXykiEY8rVw9hBFxPk4cJ2QDcA==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-memory@1.2.2:
+    resolution: {integrity: sha512-bvKVEbtQ4KsvsTuP1IqOESTyPSaqxLtpmrCfzWJnGG/fq9stKLWgZF1QPGQ8sYlq71T7VC3nB3AjgZmctiRDYQ==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-providers@1.2.2:
+    resolution: {integrity: sha512-UrAY3Iql4b3944ES2HPFQDcZjELwi2Bdhmv8p0OHmnMjr1Ut85Q0ZV5DVgVD6N6ngKtxEak7y22BPMs3LgyJ+w==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-tools@1.2.2:
+    resolution: {integrity: sha512-epZp4c78J+z4Hn+xapITJuyGHwo1AI7hWUnisggR4k+wmDmxxUUCuMQtduMHiQZYykZVwq+XS47ZmJuZY3j6zA==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-types@1.2.2:
+    resolution: {integrity: sha512-5MfpVD8L9aLPaM3Dgv8Qy1R1VPJwA0wq7uuLgkBF1/RWLCO4xvU+VSVdpsFwrZwB+4rUzOvULEnoskjw3u604w==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-ui@1.2.2:
+    resolution: {integrity: sha512-ulz12Bcyv/fj0kAQePtXJkP/sePZD5PGCv2+GN0JJf8pSmeth86vyuykf78iNB5ctf5NZQUQaRynK48iQGROJA==}
+    engines: {node: '>=22.0.0'}
+
+  librecode-utils@1.2.2:
+    resolution: {integrity: sha512-aMc03ZaO4CXXUomutY9Jxp0qv3fVJ/bSk6iqs/z3QYwxUnGuRTcD/2wBFUSrF7KdXD3JzggjECRAAiT7BfpVFw==}
+    engines: {node: '>=22.0.0'}
 
   locate-path@5.0.0:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
@@ -4434,6 +4466,47 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
+
+  librecode-config@1.2.2:
+    dependencies:
+      librecode-types: 1.2.2
+
+  librecode-core@1.2.2:
+    dependencies:
+      better-sqlite3: 12.11.1
+      chokidar: 5.0.0
+      librecode-memory: 1.2.2
+      librecode-providers: 1.2.2
+      librecode-tools: 1.2.2
+      librecode-types: 1.2.2
+      librecode-utils: 1.2.2
+      ts-morph: 28.0.0
+
+  librecode-memory@1.2.2:
+    dependencies:
+      librecode-types: 1.2.2
+      librecode-utils: 1.2.2
+
+  librecode-providers@1.2.2:
+    dependencies:
+      librecode-config: 1.2.2
+      librecode-types: 1.2.2
+      librecode-utils: 1.2.2
+
+  librecode-tools@1.2.2:
+    dependencies:
+      librecode-types: 1.2.2
+      librecode-utils: 1.2.2
+
+  librecode-types@1.2.2: {}
+
+  librecode-ui@1.2.2:
+    dependencies:
+      librecode-types: 1.2.2
+
+  librecode-utils@1.2.2:
+    dependencies:
+      librecode-types: 1.2.2
 
   locate-path@5.0.0:
     dependencies:
