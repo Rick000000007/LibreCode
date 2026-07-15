@@ -47,14 +47,14 @@ export class WorkspaceTimeline extends EventEmitter {
     if (!this.persistence) return;
     try {
       const records = this.persistence.queryTimelineEvents({ limit: this.maxEvents });
-      this.events = records.map((r) => ({
-        id: r.id as string,
-        type: r.type as TimelineEventType,
-        description: r.description as string,
-        timestamp: new Date(r.timestamp as string),
-        data: typeof r.data === 'string' ? JSON.parse(r.data as string) : (r.data as Record<string, unknown>) ?? {},
-        sessionId: r.session_id as string | undefined,
-        tags: typeof r.tags === 'string' ? JSON.parse(r.tags as string) : (r.tags as string[] | undefined),
+      this.events = records.map((r: Record<string, unknown>) => ({
+        id: r['id'] as string,
+        type: r['type'] as TimelineEventType,
+        description: r['description'] as string,
+        timestamp: new Date(r['timestamp'] as string),
+        data: typeof r['data'] === 'string' ? JSON.parse(r['data'] as string) : (r['data'] as Record<string, unknown>) ?? {},
+        sessionId: r['session_id'] as string | undefined,
+        tags: typeof r['tags'] === 'string' ? JSON.parse(r['tags'] as string) : (r['tags'] as string[] | undefined),
       }));
     } catch { /* skip */ }
   }
@@ -106,10 +106,10 @@ export class WorkspaceTimeline extends EventEmitter {
     const prev = idx > 0 ? this.events[idx - 1] : undefined;
     let diff: string | undefined;
 
-    if (prev && event.type === 'file_edit' && event.data.content && prev.data.content) {
+    if (prev && event.type === 'file_edit' && event.data['content'] && prev.data['content']) {
       diff = createDiff(
-        prev.data.content as string,
-        event.data.content as string,
+        prev.data['content'] as string,
+        event.data['content'] as string,
       );
     }
 
@@ -134,8 +134,8 @@ export class WorkspaceTimeline extends EventEmitter {
     const fileStates = new Map<string, string>();
 
     for (const e of eventsToRestore) {
-      if (e.type === 'file_edit' && e.data.file && e.data.content) {
-        fileStates.set(e.data.file as string, e.data.content as string);
+      if (e.type === 'file_edit' && e.data['file'] && e.data['content']) {
+        fileStates.set(e.data['file'] as string, e.data['content'] as string);
       }
     }
 
@@ -160,7 +160,7 @@ export class WorkspaceTimeline extends EventEmitter {
     if (this.persistence) {
       const records = this.persistence.queryTimelineEvents({});
       for (const r of records) {
-        this.persistence.deleteTimelineEvent(r.id as string);
+        this.persistence.deleteTimelineEvent(r['id'] as string);
       }
     }
     this.emit('cleared');

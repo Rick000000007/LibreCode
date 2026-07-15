@@ -565,9 +565,9 @@ export class LSPClient extends EventEmitter {
       if (pending) {
         this.pendingRequests.delete(msg.id as number);
         if ('error' in msg && msg.error) {
-          pending.reject(new Error(`LSP ${this.config.language}: ${msg.error.message}`));
+          pending.reject(new Error(`LSP ${this.config.language}: ${(msg as { error: { message: string } }).error.message}`));
         } else {
-          pending.resolve(msg.result);
+          pending.resolve((msg as { result: unknown }).result);
         }
       }
     } else if ('method' in msg && msg.method) {

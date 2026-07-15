@@ -761,7 +761,7 @@ const dashboardCommand: Command = {
     dashboard.update({
       provider: ctx.providerManager?.getActiveProvider()?.id ?? 'unknown',
       model: ctx.providerManager?.getActiveProvider()?.model ?? 'unknown',
-      sessionDuration: Date.now() - (ctx as any).sessionStart ?? Date.now(),
+      sessionDuration: ((ctx as any).sessionStart ? Date.now() - (ctx as any).sessionStart : Date.now()),
       workspace: {
         root: ctx.workingDir ?? process.cwd(),
         branch: null,

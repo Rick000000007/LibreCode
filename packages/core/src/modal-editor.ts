@@ -369,15 +369,15 @@ export class ModalEditor extends EventEmitter {
         this.emit('contentChanged', this.getContent());
         return true;
       case 'y':
-        this.clipboard = this.lines[this.cursor.line];
+        this.clipboard = this.lines[this.cursor.line] ?? null;
         return true;
       case 'Y':
-        this.clipboard = this.lines[this.cursor.line];
+        this.clipboard = this.lines[this.cursor.line] ?? null;
         return true;
       case 'p':
         if (this.clipboard !== null) {
           this.pushUndo();
-          const line = this.lines[this.cursor.line]!;
+          const line = this.lines[this.cursor.line] ?? '';
           this.lines[this.cursor.line] = line.slice(0, this.cursor.column) + this.clipboard + line.slice(this.cursor.column);
           this.cursor.column += this.clipboard.length;
           this.modified = true;
