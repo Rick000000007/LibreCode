@@ -1,6 +1,6 @@
 {
   "name": "librecode-plugin-sdk",
-  "version": "1.0.1",
+  "version": "1.2.1",
   "description": "LibreCode Provider Plugin SDK — build custom provider adapters",
   "type": "module",
   "main": "dist/index.js",
@@ -25,7 +25,7 @@
     "sdk"
   ],
   "dependencies": {
-    "librecode-types": "workspace:*"
+    "librecode-types": "^1.2.1"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

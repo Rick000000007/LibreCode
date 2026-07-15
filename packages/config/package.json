@@ -1,6 +1,6 @@
 {
   "name": "librecode-config",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "Configuration management for librecode",
   "license": "MIT",
   "publishConfig": {
@@ -33,7 +33,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode-types": "workspace:*"
+    "librecode-types": "^1.2.1"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.9",

@@ -1,6 +1,6 @@
 {
   "name": "librecode-memory",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "Context management and memory compaction for librecode",
   "license": "MIT",
   "publishConfig": {
@@ -33,8 +33,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode-types": "workspace:*",
-    "librecode-utils": "workspace:*"
+    "librecode-types": "^1.2.1",
+    "librecode-utils": "^1.2.1"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.9",

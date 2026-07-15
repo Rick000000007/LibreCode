@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "AI coding agent CLI",
   "license": "MIT",
   "files": [
@@ -36,14 +36,14 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "librecode-config": "workspace:*",
-    "librecode-core": "workspace:^1.2.0",
-    "librecode-memory": "workspace:*",
-    "librecode-providers": "workspace:*",
-    "librecode-tools": "workspace:*",
-    "librecode-types": "workspace:*",
-    "librecode-ui": "workspace:^1.2.0",
-    "librecode-utils": "workspace:*"
+    "librecode-config": "^1.2.1",
+    "librecode-core": "^1.2.1",
+    "librecode-memory": "^1.2.1",
+    "librecode-providers": "^1.2.1",
+    "librecode-tools": "^1.2.1",
+    "librecode-types": "^1.2.1",
+    "librecode-ui": "^1.2.1",
+    "librecode-utils": "^1.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,6 +1,6 @@
 {
   "name": "librecode-core",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Core agent runtime for librecode",
   "license": "MIT",
   "publishConfig": {
@@ -39,11 +39,11 @@
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "chokidar": "^5.0.0",
-    "librecode-memory": "workspace:*",
-    "librecode-providers": "workspace:*",
-    "librecode-tools": "workspace:*",
-    "librecode-types": "workspace:*",
-    "librecode-utils": "workspace:*",
+    "librecode-memory": "^1.2.1",
+    "librecode-providers": "^1.2.1",
+    "librecode-tools": "^1.2.1",
+    "librecode-types": "^1.2.1",
+    "librecode-utils": "^1.2.1",
     "ts-morph": "^28.0.0"
   },
   "devDependencies": {
