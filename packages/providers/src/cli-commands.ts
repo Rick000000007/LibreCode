@@ -1,11 +1,12 @@
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import type { LibreConfig } from 'librecode-types';
+import type { LibreConfig, ProviderCapabilities } from 'librecode-types';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderRegistry } from './provider-registry.js';
 import { ProviderFactory } from './provider-factory.js';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
-import type { ModelInfo } from './base.js';
+import type { LLMProvider, ModelInfo } from './base.js';
+import { getDescriptor } from './provider-descriptors.js';
+import { capabilitiesFromDescriptor } from './capabilities.js';
 
 export function printProviderList(
   config: LibreConfig,
@@ -281,16 +282,15 @@ export async function handleProviderTest(
   }
 
   const factory = new ProviderFactory(registry);
-  let provider: OpenAICompatibleProvider;
+  let provider: LLMProvider;
 
   try {
-    const llmProvider = factory.create(providerId, {
+    provider = factory.create(providerId, {
       enabled: true,
       apiKey: entry?.apiKey,
       endpoint: entry?.endpoint,
       defaultModel: entry?.defaultModel ?? meta?.defaultModel,
     });
-    provider = llmProvider as unknown as OpenAICompatibleProvider;
   } catch (err) {
     output.write(`\x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
     return;
@@ -298,20 +298,35 @@ export async function handleProviderTest(
 
   output.write(`\n\x1B[1mTesting ${meta?.name ?? providerId}...\x1B[22m\n`);
 
-  // Step 1: DNS / Connection
+  // Step 1: Health / Connection via adapter pipeline
   output.write(`  \x1B[90mVerifying API endpoint...\x1B[39m `);
-  const connResult = await provider.testConnection();
-  if (connResult.ok) {
-    output.write(`\x1B[32m✓\x1B[39m \x1B[90m(${connResult.latencyMs}ms)\x1B[39m\n`);
+  const healthStart = Date.now();
+  let healthOk = false;
+  let healthError: string | undefined;
+  try {
+    const healthResult = await provider.health();
+    healthOk = healthResult.status !== 'unhealthy';
+    healthError = healthResult.status === 'unhealthy' ? (healthResult.message ?? 'Health check failed') : undefined;
+  } catch (err) {
+    healthOk = false;
+    healthError = err instanceof Error ? err.message : String(err);
+  }
+  const healthLatency = Date.now() - healthStart;
+  if (healthOk) {
+    output.write(`\x1B[32m✓\x1B[39m \x1B[90m(${healthLatency}ms)\x1B[39m\n`);
   } else {
     output.write(`\x1B[31m✘\x1B[39m\n`);
-    output.write(`    \x1B[31m${connResult.error}\x1B[39m\n`);
+    output.write(`    \x1B[31m${healthError ?? 'Unknown error'}\x1B[39m\n`);
     return;
   }
 
-  // Step 2: Capability detection
+  // Step 2: Capability detection (from descriptor)
   output.write(`  \x1B[90mDetecting capabilities...\x1B[39m `);
-  const caps = await provider.detectCapabilities();
+  const descriptor = getDescriptor(providerId);
+  const descriptorCaps = descriptor?.capabilities ?? [];
+  const caps: ProviderCapabilities = descriptorCaps.length > 0
+    ? capabilitiesFromDescriptor(descriptorCaps)
+    : registry.deriveCapabilities(providerId);
   output.write(`\x1B[32m✓\x1B[39m\n`);
   output.write(`    \x1B[90mChat:\x1B[39m ${caps.chatCompletions ? '\x1B[32m✓\x1B[39m' : '\x1B[31m✘\x1B[39m'}`);
   output.write(` \x1B[90mStreaming:\x1B[39m ${caps.streaming ? '\x1B[32m✓\x1B[39m' : '\x1B[31m✘\x1B[39m'}`);
@@ -321,12 +336,17 @@ export async function handleProviderTest(
 
   // Step 3: Model discovery
   output.write(`  \x1B[90mDiscovering models...\x1B[39m `);
-  const models = await provider.listModels();
+  let models: ModelInfo[] = [];
+  try {
+    models = await provider.listModels();
+  } catch {
+    models = [];
+  }
   if (models.length > 0) {
     output.write(`\x1B[32m✓\x1B[39m \x1B[90m(${models.length} models found)\x1B[39m\n`);
     const shown = models.slice(0, 5);
     for (const m of shown) {
-      output.write(`    \x1B[33m- ${m}\x1B[39m\n`);
+      output.write(`    \x1B[33m- ${m.name || m.id}\x1B[39m\n`);
     }
     if (models.length > 5) {
       output.write(`    \x1B[90m... and ${models.length - 5} more. Run \`librecode provider models ${providerId}\` to list all.\x1B[39m\n`);
@@ -437,7 +457,7 @@ export async function handleProviderModels(
   const baseUrl = entry?.endpoint ?? registry.getBaseUrl(providerId) ?? 'https://api.openai.com/v1';
 
   const factory = new ProviderFactory(registry);
-  let provider: OpenAICompatibleProvider;
+  let provider: LLMProvider;
 
   try {
     provider = factory.create(providerId, {
@@ -445,7 +465,7 @@ export async function handleProviderModels(
       apiKey,
       endpoint: baseUrl,
       defaultModel: entry?.defaultModel ?? meta?.defaultModel,
-    }) as unknown as OpenAICompatibleProvider;
+    });
   } catch (err) {
     output.write(`\x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
     return;
@@ -455,7 +475,12 @@ export async function handleProviderModels(
   output.write(`\x1B[90mEndpoint: ${baseUrl}\x1B[39m\n\n`);
 
   output.write(`  \x1B[90mFetching models...\x1B[39m `);
-  const models = await provider.listModels();
+  let models: ModelInfo[] = [];
+  try {
+    models = await provider.listModels();
+  } catch {
+    models = [];
+  }
 
   if (models.length === 0) {
     output.write(`\x1B[33mModel discovery not available.\x1B[39m\n`);
@@ -464,8 +489,7 @@ export async function handleProviderModels(
   } else {
     output.write(`\x1B[32m✓ ${models.length} models available\x1B[39m\n\n`);
     for (const model of models.slice(0, 30)) {
-      const m = model as ModelInfo;
-      output.write(`  \x1B[33m- ${m.id}\x1B[39m \x1B[90m(${m.contextWindow.toLocaleString()} ctx)\x1B[39m\n`);
+      output.write(`  \x1B[33m- ${model.id}\x1B[39m \x1B[90m(${model.contextWindow.toLocaleString()} ctx)\x1B[39m\n`);
     }
     if (models.length > 30) {
       output.write(`  \x1B[90m... and ${models.length - 30} more\x1B[39m\n`);

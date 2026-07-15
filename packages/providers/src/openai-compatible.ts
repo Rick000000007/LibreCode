@@ -173,11 +173,17 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
   override async health(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; message?: string }> {
     try {
-      const result = await this.testConnection();
-      if (result.ok) {
-        return { status: 'healthy', message: `${this.providerName} available (${result.latencyMs}ms)` };
+      const start = Date.now();
+      const result = await this.httpClient.request('POST', this.chatPath, {
+        model: this.defaultModel,
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+        stream: false,
+      }, false, { timeout: 15000 });
+      if (result.status === 200) {
+        return { status: 'healthy', message: `${this.providerName} available (${Date.now() - start}ms)` };
       }
-      return { status: 'unhealthy', message: result.error ?? 'Health check failed' };
+      return { status: 'unhealthy', message: `HTTP ${result.status}` };
     } catch (err) {
       return { status: 'unhealthy', message: err instanceof Error ? err.message : String(err) };
     }
@@ -231,6 +237,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
     };
   }
 
+  /** @deprecated Use health() instead. Kept for backward compatibility. */
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     const start = Date.now();
     try {
@@ -239,7 +246,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
         messages: [{ role: 'user', content: 'hi' }],
         max_tokens: 1,
         stream: false,
-      });
+      }, false, { timeout: 15000 });
       return {
         ok: result.status === 200,
         latencyMs: Date.now() - start,

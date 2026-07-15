@@ -5,7 +5,8 @@ import type {
   CompletionResponse,
   HealthCheckResult,
 } from 'librecode-types';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
+import { OpenAICompatibleAdapter } from './adapters/openai-compatible-adapter.js';
+import { AdapterBridge } from './adapter-bridge.js';
 import { LibreError } from 'librecode-utils';
 
 /**
@@ -276,13 +277,16 @@ export class FreeProvider extends BaseProvider {
   }
 
   private createProvider(endpoint: FreeModelEndpoint, apiKey?: string): LLMProvider {
-    return new OpenAICompatibleProvider({
-      name: endpoint.id,
+    const adapter = new OpenAICompatibleAdapter({
+      providerId: endpoint.id,
       baseUrl: endpoint.baseUrl,
-      apiKey,
       defaultModel: endpoint.defaultModel,
+      apiKey,
+      authType: apiKey ? { type: 'bearer', envVar: '' } : { type: 'none' },
+      capabilities: ['chat', 'streaming'],
       timeout: 30000,
-    }) as unknown as LLMProvider;
+    });
+    return new AdapterBridge(adapter, endpoint.defaultModel, ['chat', 'streaming']);
   }
 
   private rebuildFallbackOrder(): void {

@@ -10,7 +10,6 @@
 import { describe, it, expect } from 'vitest';
 import { ProviderRegistry } from '../provider-registry.js';
 import { ProviderFactory } from '../provider-factory.js';
-import { OpenAICompatibleProvider } from '../openai-compatible.js';
 
 interface TestResult {
   provider: string;
@@ -56,15 +55,11 @@ async function testProvider(id: string): Promise<TestResult> {
   const result: TestResult = { provider: id, baseUrl, health: 'SKIPPED', models: 'SKIPPED', chat: 'SKIPPED', stream: 'SKIPPED' };
 
   try {
-    const builtin = registry.getBuiltin(id);
-    const provider = new OpenAICompatibleProvider({
-      name: id,
-      baseUrl: config.baseUrl,
+    const provider = factory.create(id, {
+      enabled: true,
       apiKey: config.apiKey,
+      endpoint: config.baseUrl,
       defaultModel: meta.defaultModel,
-      chatPath: builtin?.chatPath,
-      modelsPath: builtin?.modelsPath,
-      customHeaders: builtin?.customHeaders,
     });
 
     // Health check

@@ -1,4 +1,7 @@
 import type { LLMProvider } from './base.js';
+import type { Capability } from './types/provider-descriptor.js';
+import { OpenAICompatibleAdapter } from './adapters/openai-compatible-adapter.js';
+import { AdapterBridge } from './adapter-bridge.js';
 
 export type { BoxFuture, LLMProvider, LlmErrorCode } from './base.js';
 export { BaseProvider, LlmError, createUsage } from './base.js';
@@ -92,10 +95,14 @@ export function createProvider(
   baseUrl?: string,
   defaultModel?: string,
 ): LLMProvider {
-  return new OpenAICompatibleProvider({
-    name,
+  const defaultCaps: Capability[] = ['chat', 'streaming', 'tools'];
+  const adapter = new OpenAICompatibleAdapter({
+    providerId: name,
     baseUrl: baseUrl ?? 'https://api.openai.com/v1',
-    apiKey,
     defaultModel: defaultModel ?? 'gpt-4o',
+    apiKey,
+    authType: apiKey ? { type: 'bearer', envVar: `${name.toUpperCase().replace(/-/g, '_')}_API_KEY` } : { type: 'none' },
+    capabilities: defaultCaps,
   });
+  return new AdapterBridge(adapter, defaultModel ?? 'gpt-4o', defaultCaps);
 }

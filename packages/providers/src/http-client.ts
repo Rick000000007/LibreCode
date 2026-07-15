@@ -366,10 +366,11 @@ export class HttpClient {
 
     const controller = new AbortController();
     const timeoutMs = requestOptions?.timeout ?? this.options.timeout ?? 30000;
-    const timeoutId = setTimeout(() => {
+    const hasTimeout = timeoutMs > 0 && !stream;
+    const timeoutId = hasTimeout ? setTimeout(() => {
       logger.warn(`Request to ${url} timed out after ${timeoutMs}ms`);
       controller.abort();
-    }, timeoutMs);
+    }, timeoutMs) : undefined;
 
     // Propagate AbortSignal
     let abortHandler: (() => void) | null = null;
@@ -462,7 +463,7 @@ export class HttpClient {
         diagnostics: diag,
       };
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
       if (requestOptions?.signal && abortHandler) {
         requestOptions.signal.removeEventListener('abort', abortHandler);
       }

@@ -5,7 +5,7 @@ import type { LibreConfig } from 'librecode-types';
 import { ProviderRegistry } from './provider-registry.js';
 import { ConfigurationManager } from './configuration-manager.js';
 import { ProviderFactory } from './provider-factory.js';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
+import type { LLMProvider } from './base.js';
 
 function openBrowser(url: string) {
   const cmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
@@ -331,13 +331,13 @@ export class SetupWizard {
   ): Promise<void> {
     const factory = new ProviderFactory(this.registry);
 
-    let provider: OpenAICompatibleProvider;
+    let provider: LLMProvider;
     try {
       provider = factory.create(providerId, {
         enabled: true,
         apiKey,
         defaultModel: model,
-      }) as unknown as OpenAICompatibleProvider;
+      });
     } catch (err) {
       output.write(`  \x1B[31m✘ Failed to create provider: ${err instanceof Error ? err.message : String(err)}\x1B[39m\n`);
       return;

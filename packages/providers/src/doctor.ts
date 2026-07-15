@@ -304,8 +304,8 @@ export class Doctor {
            latency = cached.latency;
         } else {
            const result = await Promise.race([
-             router.checkHealth(name),
-             new Promise<{ available: boolean; error: string }>((r) => setTimeout(() => r({ available: false, error: 'Connection timed out' }), 5000))
+              router.checkHealth(name),
+              new Promise<{ available: boolean; error: string }>((r) => setTimeout(() => r({ available: false, error: 'Health check timed out after 15s' }), 15000))
            ]);
            healthResult = result;
            latency = Date.now() - healthStart;
@@ -326,7 +326,7 @@ export class Doctor {
         try {
           const models = await Promise.race([
              provider.listModels(),
-             new Promise<any[]>((r) => setTimeout(() => r([]), 5000))
+             new Promise<any[]>((r) => setTimeout(() => r([]), 30000))
           ]);
           if (models.length > 0) {
             detailLines.push(`Model Discovery: ${models.length} models found`);

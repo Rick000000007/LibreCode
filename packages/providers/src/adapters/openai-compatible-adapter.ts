@@ -171,7 +171,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
 
   async listModels(): Promise<ModelInfo[]> {
     try {
-      const result = await this.httpClient.request('GET', this.modelsPath);
+      const result = await this.httpClient.request('GET', this.modelsPath, undefined, false, { timeout: 30000 });
       if (result.status !== 200) return [this.getDefaultModelInfo()];
 
       const raw = JSON.parse(result.body as string);
@@ -205,7 +205,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
         messages: [{ role: 'user', content: 'hi' }],
         max_tokens: 1,
         stream: false,
-      });
+      }, false, { timeout: 15000 });
       return {
         status: result.status === 200 ? 'healthy' : 'unhealthy',
         message: result.status === 200 ? `${this.providerId} available` : `HTTP ${result.status}`,

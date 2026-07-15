@@ -55,7 +55,7 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const result = await this.httpClient.request('GET', '/v1/models');
+    const result = await this.httpClient.request('GET', '/v1/models', undefined, false, { timeout: 30000 });
     if (result.status !== 200) return [this.getDefaultModel()];
     const raw = JSON.parse(result.body as string);
     const models = raw.data ?? [];
@@ -72,7 +72,7 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   async health(): Promise<HealthStatus> {
     try {
-      const result = await this.httpClient.request('GET', '/v1/models');
+      const result = await this.httpClient.request('GET', '/v1/models', undefined, false, { timeout: 15000 });
       return {
         status: result.status === 200 ? 'healthy' : 'unhealthy',
         message: result.status === 200 ? 'Anthropic available' : `HTTP ${result.status}`,

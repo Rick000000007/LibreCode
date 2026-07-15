@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ProviderRegistry } from '../provider-registry.js';
 import { ProviderFactory } from '../provider-factory.js';
 import { LlmError } from '../base.js';
-import { OpenAICompatibleProvider } from '../openai-compatible.js';
+import { OpenAICompatibleAdapter } from '../adapters/openai-compatible-adapter.js';
+import { AdapterBridge } from '../adapter-bridge.js';
 import { LibreError } from 'librecode-utils';
 
 describe('NVIDIA provider', () => {
@@ -47,19 +48,22 @@ describe('NVIDIA provider', () => {
 
 describe('NVIDIA provider HTTP operations (mocked)', () => {
   let originalFetch: typeof globalThis.fetch;
-  let provider: OpenAICompatibleProvider;
+  let provider: AdapterBridge;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn();
     vi.clearAllMocks();
 
-    provider = new OpenAICompatibleProvider({
-      name: 'nvidia',
+    const adapter = new OpenAICompatibleAdapter({
+      providerId: 'nvidia',
       baseUrl: 'https://integrate.api.nvidia.com/v1',
       apiKey: 'nvapi-test-key-12345',
       defaultModel: 'meta/llama-3.1-8b-instruct',
+      authType: { type: 'bearer', envVar: 'NVIDIA_API_KEY' },
+      capabilities: ['chat', 'streaming'],
     });
+    provider = new AdapterBridge(adapter, 'meta/llama-3.1-8b-instruct', ['chat', 'streaming']);
   });
 
   afterEach(() => {
