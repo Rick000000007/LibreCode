@@ -435,6 +435,10 @@ export class Agent {
     }
   }
 
+  addUserMessage(content: string): void {
+    this.messages.push({ role: 'user', content });
+  }
+
   setPermission(toolName: string, allow: boolean): void {
     if (allow) {
       this.permissions.setAlwaysAllow(toolName);

@@ -7,7 +7,7 @@ export { type ExecutionStage, getStageLabel, getStageIcon, inferStageFromTool } 
 export { formatStatusHeader, getInitialStatus, type StatusInfo } from './status.js';
 export { getTheme, resetTheme, type Theme } from './theme.js';
 export { getKeyboardManager, parseKeyEvent, type KeyBinding, type ShortcutAction } from './shortcuts.js';
-export { CommandPalette, type PaletteItem, type PaletteGroup } from './palette.js';
+export { CommandPalette, recordRecentCommand, type PaletteItem, type PaletteGroup, type PaletteSearchOptions } from './palette.js';
 export { Completer, type Completion, type CompletionTrigger, type CompletionContext } from './completer.js';
 export { WorkflowTracker, type WorkflowStep } from './workflow.js';
 export { PluginManager, type IPlugin, type PluginManifest } from './plugin.js';

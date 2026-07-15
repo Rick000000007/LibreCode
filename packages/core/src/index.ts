@@ -31,7 +31,7 @@ export type { SecurityPolicy, AuditEntry } from './security.js';
 export { AstProviderRegistry, defaultRegistry, TsMorphProvider, TypeScriptAstProvider, PythonAstProvider, RustAstProvider, GoAstProvider, detectLanguage, isSupportedLanguage } from './ast-editor/index.js';
 export type { AstProvider, AstEditResult, AstEdit, EditRange, SymbolInfo, Language } from './ast-editor/index.js';
 export { PersistenceStore } from './persistence.js';
-export type { PersistenceConfig } from './persistence.js';
+export type { PersistenceConfig, ConversationRecord, ProviderHistoryRecord, WorkspaceMetadataRecord } from './persistence.js';
 export { CodeIndexer, VectorIndex, TfIdfVectorizer, OpenAIEmbeddingProvider, OllamaEmbeddingProvider } from './rag.js';
 export type { Chunk, SearchResult, EmbeddingProvider } from './rag.js';
 export { AgentOrchestrator } from './orchestrator.js';
@@ -53,3 +53,27 @@ export type { Role, User, Permission, AuditEvent, ComplianceRule, ComplianceResu
 export { ChokidarWatcher } from './chokidar-watcher.js';
 export type { WatchEvent, WatchListener, ChokidarWatcherOptions } from './chokidar-watcher.js';
 export { Agent } from './agent.js';
+
+// Phase 37 - LSP Integration
+export { LSPManager, LSPClient } from './lsp/index.js';
+export type { LSPDiagnostic, LSPCompletion, LSPSymbol, LSPHover, LSPLocation, LSPServerConfig, LSPManagerOptions } from './lsp/index.js';
+
+// Phase 38 - External Editor
+export { ExternalEditor } from './editor.js';
+export type { EditorConfig } from './editor.js';
+
+// Phase 39 - Modal Editor
+export { ModalEditor } from './modal-editor.js';
+export type { EditorMode, EditorOptions } from './modal-editor.js';
+
+// Phase 40 - Macro System
+export { MacroEngine } from './macro.js';
+export type { MacroDefinition, MacroArgument, MacroStep, MacroContext } from './macro.js';
+
+// Phase 41 - Workspace Timeline
+export { WorkspaceTimeline } from './timeline.js';
+export type { TimelineEvent, TimelineEventType, TimelineDiff } from './timeline.js';
+
+// Phase 42 - Workspace Dashboard
+export { WorkspaceDashboard } from './dashboard.js';
+export type { DashboardData, DashboardWidget } from './dashboard.js';

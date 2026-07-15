@@ -1,6 +1,7 @@
 import { globalCommandRegistry, type Command, type CommandContext } from './command-framework.js';
 import { Doctor, ConfigurationManager } from 'librecode-providers';
-import { getLogger } from 'librecode-ui';
+import { getLogger, recordRecentCommand } from 'librecode-ui';
+import { ExternalEditor, ModalEditor, MacroEngine, WorkspaceTimeline, WorkspaceDashboard, LSPManager } from 'librecode-core';
 
 // 1. help
 const helpCommand: Command = {
@@ -495,6 +496,341 @@ const setupCommand: Command = {
   },
 };
 
+// --- Phase 38: External Editor Commands ---
+const editCommand: Command = {
+  metadata: {
+    name: 'edit',
+    description: 'Open external editor to compose content',
+    usage: '/edit [file]',
+    examples: ['/edit', '/edit notes.md'],
+    aliases: ['compose'],
+  },
+  async execute(ctx: CommandContext) {
+    try {
+      const editor = new ExternalEditor();
+      const fileArg = ctx.args[0];
+      let result: string | null;
+      if (fileArg) {
+        result = await editor.editFile(fileArg);
+      } else {
+        result = await editor.compose();
+      }
+      if (result === null) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[33mEditor closed without saving.\x1B[39m', 'system');
+      } else if (result.trim()) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[32mEditor content captured (${result.length} chars).\x1B[39m`, 'system');
+        ctx.agent.addUserMessage(result);
+      }
+    } catch (err) {
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mEditor error: ${err}\x1B[39m`, 'system');
+    }
+  },
+};
+
+const editSelectionCommand: Command = {
+  metadata: {
+    name: 'edit-selection',
+    description: 'Edit selected text in external editor',
+    usage: '/edit-selection <text>',
+    examples: ['/edit-selection "some text to edit"'],
+    aliases: ['edit-sel'],
+  },
+  async execute(ctx: CommandContext) {
+    try {
+      const editor = new ExternalEditor();
+      const text = ctx.args.join(' ') || ' ';
+      const result = await editor.editSelection(text);
+      if (result && result.trim()) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[32mEdited: ${result.slice(0, 100)}...\x1B[39m`, 'system');
+      }
+    } catch (err) {
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mError: ${err}\x1B[39m`, 'system');
+    }
+  },
+};
+
+const editPromptCommand: Command = {
+  metadata: {
+    name: 'edit-prompt',
+    description: 'Edit your prompt in an external editor before sending',
+    usage: '/edit-prompt',
+    examples: ['/edit-prompt'],
+    aliases: ['ep'],
+  },
+  async execute(ctx: CommandContext) {
+    try {
+      const editor = new ExternalEditor();
+      const result = await editor.editPrompt('Write your prompt here...');
+      if (result && result.trim() && result !== 'Write your prompt here...') {
+        if (ctx.tuiApp) {
+          ctx.tuiApp.addToConversation(`\x1B[36m> \x1B[39m${result}`, 'user');
+          ctx.agent.addUserMessage(result);
+        }
+      }
+    } catch (err) {
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mError: ${err}\x1B[39m`, 'system');
+    }
+  },
+};
+
+// --- Phase 40: Macro Commands ---
+let macroEngineInstance: MacroEngine | null = null;
+function getMacroEngine(): MacroEngine {
+  if (!macroEngineInstance) macroEngineInstance = new MacroEngine();
+  return macroEngineInstance;
+}
+
+const macroCommand: Command = {
+  metadata: {
+    name: 'macro',
+    description: 'List, run, edit, export, or import macros',
+    usage: '/macro [run|edit|export|import|list] [name]',
+    examples: ['/macro list', '/macro run review-pr --branch main --reviewer alice', '/macro export my-macro'],
+    aliases: ['macros'],
+  },
+  async execute(ctx: CommandContext) {
+    const engine = getMacroEngine();
+    const sub = ctx.args[0]?.toLowerCase();
+
+    if (!sub || sub === 'list') {
+      const macros = engine.list();
+      if (macros.length === 0) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[90mNo macros defined.\x1B[39m', 'system');
+      } else {
+        const lines = ['\x1B[1mDefined Macros:\x1B[22m', ''];
+        for (const m of macros) {
+          lines.push(`  \x1B[33m${m.name}\x1B[39m${m.description ? ` - ${m.description}` : ''}`);
+        }
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(lines.join('\n'), 'system');
+      }
+      return;
+    }
+
+    if (sub === 'run') {
+      const name = ctx.args[1];
+      if (!name) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /macro run <name> [args]\x1B[39m', 'system');
+        return;
+      }
+      const macroArgs: Record<string, unknown> = {};
+      for (let i = 2; i < ctx.args.length; i++) {
+        const pair = ctx.args[i]!.split('=');
+        if (pair.length === 2) macroArgs[pair[0]!.replace(/^--/, '')] = pair[1]!;
+      }
+      try {
+        const result = await engine.execute(name, macroArgs);
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[32mMacro '${name}' executed.\x1B[39m\n${result.slice(0, 500)}`, 'system');
+      } catch (err) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mMacro error: ${err}\x1B[39m`, 'system');
+      }
+      return;
+    }
+
+    if (sub === 'export') {
+      const name = ctx.args[1];
+      if (!name) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /macro export <name>\x1B[39m', 'system');
+        return;
+      }
+      const macro = engine.get(name);
+      if (!macro) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mMacro '${name}' not found.\x1B[39m`, 'system');
+        return;
+      }
+      const json = engine.exportToJson(macro);
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[90m${json}\x1B[39m`, 'system');
+      return;
+    }
+
+    if (sub === 'import') {
+      const json = ctx.args.slice(1).join(' ');
+      if (!json) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /macro import <json>\x1B[39m', 'system');
+        return;
+      }
+      try {
+        engine.importFromJson(json);
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[32mMacro imported.\x1B[39m', 'system');
+      } catch (err) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mImport error: ${err}\x1B[39m`, 'system');
+      }
+      return;
+    }
+  },
+};
+
+// --- Phase 41: Timeline Command ---
+let timelineInstance: WorkspaceTimeline | null = null;
+function getTimeline(): WorkspaceTimeline {
+  if (!timelineInstance) timelineInstance = new WorkspaceTimeline();
+  return timelineInstance;
+}
+
+const timelineCommand: Command = {
+  metadata: {
+    name: 'timeline',
+    description: 'Browse workspace timeline history',
+    usage: '/timeline [list|diff|search|stats|clear]',
+    examples: ['/timeline list', '/timeline diff <id>', '/timeline search query'],
+    aliases: ['tl'],
+  },
+  execute(ctx: CommandContext) {
+    const tl = getTimeline();
+    const sub = ctx.args[0]?.toLowerCase();
+
+    if (sub === 'stats' || !sub) {
+      const s = tl.stats();
+      if (ctx.tuiApp) {
+        ctx.tuiApp.addToConversation(
+          `\x1B[1mTimeline Stats\x1B[22m\n` +
+          `  Total events: ${s.total}\n` +
+          `  By type: ${Object.entries(s.byType).map(([k, v]) => `${k}: ${v}`).join(', ')}\n` +
+          `  Range: ${s.timeRange.oldest?.toLocaleString() ?? 'N/A'} - ${s.timeRange.newest?.toLocaleString() ?? 'N/A'}`,
+          'system'
+        );
+      }
+      return;
+    }
+
+    if (sub === 'list') {
+      const events = tl.getEvents({ limit: parseInt(ctx.args[1] ?? '20', 10) });
+      const lines = ['\x1B[1mRecent Events:\x1B[22m', ''];
+      for (const e of events) {
+        const icon = e.type === 'error' ? '\x1B[31m✘\x1B[39m' : '\x1B[32m●\x1B[39m';
+        lines.push(`  ${icon} \x1B[90m${e.timestamp.toLocaleTimeString()}\x1B[39m \x1B[36m${e.type}\x1B[39m ${e.description.slice(0, 60)}`);
+      }
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(lines.join('\n'), 'system');
+      return;
+    }
+
+    if (sub === 'diff') {
+      const id = ctx.args[1];
+      if (!id) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /timeline diff <event-id>\x1B[39m', 'system');
+        return;
+      }
+      const diff = tl.getDiff(id);
+      if (!diff) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mEvent not found or no diff available.\x1B[39m', 'system');
+        return;
+      }
+      if (ctx.tuiApp) {
+        const text = [
+          `Diff for: ${diff.event.description}`,
+          `Type: ${diff.event.type}`,
+          `Time: ${diff.event.timestamp.toLocaleString()}`,
+          diff.diff ? `\n${diff.diff.slice(0, 1000)}` : '\n\x1B[90mNo content diff available\x1B[39m',
+        ].join('\n');
+        ctx.tuiApp.addToConversation(text, 'system');
+      }
+      return;
+    }
+
+    if (sub === 'search') {
+      const query = ctx.args.slice(1).join(' ');
+      if (!query) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /timeline search <query>\x1B[39m', 'system');
+        return;
+      }
+      const results = tl.search(query);
+      if (results.length === 0) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[90mNo matching events.\x1B[39m', 'system');
+        return;
+      }
+      const lines = [`\x1B[1mSearch results for "${query}":\x1B[22m`, ''];
+      for (const e of results.slice(0, 20)) {
+        lines.push(`  \x1B[90m${e.timestamp.toLocaleTimeString()}\x1B[39m \x1B[36m${e.type}\x1B[39m ${e.description.slice(0, 60)}`);
+      }
+      if (ctx.tuiApp) ctx.tuiApp.addToConversation(lines.join('\n'), 'system');
+      return;
+    }
+  },
+};
+
+// --- Phase 42: Dashboard Command ---
+const dashboardCommand: Command = {
+  metadata: {
+    name: 'dashboard',
+    description: 'Show workspace dashboard with system status',
+    usage: '/dashboard',
+    examples: ['/dashboard'],
+    aliases: ['dash', 'status-info'],
+  },
+  execute(ctx: CommandContext) {
+    const dashboard = new WorkspaceDashboard();
+    dashboard.update({
+      provider: ctx.providerManager?.getActiveProvider()?.id ?? 'unknown',
+      model: ctx.providerManager?.getActiveProvider()?.model ?? 'unknown',
+      sessionDuration: Date.now() - (ctx as any).sessionStart ?? Date.now(),
+      workspace: {
+        root: ctx.workingDir ?? process.cwd(),
+        branch: null,
+        status: 'active',
+        fileCount: 0,
+      },
+    });
+    const rendered = dashboard.render();
+    if (ctx.tuiApp) {
+      ctx.tuiApp.addMarkdown(rendered);
+    } else {
+      process.stdout.write(rendered + '\n');
+    }
+  },
+};
+
+// --- Phase 37: LSP Command ---
+const lspCommand: Command = {
+  metadata: {
+    name: 'lsp',
+    description: 'Manage Language Server Protocol servers',
+    usage: '/lsp [start|stop|status|diagnostics] [language]',
+    examples: ['/lsp status', '/lsp start typescript', '/lsp diagnostics'],
+    aliases: ['language-server'],
+  },
+  async execute(ctx: CommandContext) {
+    const sub = ctx.args[0]?.toLowerCase();
+    const workingDir = ctx.workingDir ?? process.cwd();
+
+    if (sub === 'status' || !sub) {
+      const available = LSPManager.getAvailableServers();
+      if (ctx.tuiApp) {
+        ctx.tuiApp.addToConversation(
+          `\x1B[1mLSP Servers\x1B[22m\n` +
+          `  Available: ${available.length > 0 ? available.join(', ') : '\x1B[90mNone detected\x1B[39m'}`,
+          'system'
+        );
+      }
+      return;
+    }
+
+    if (sub === 'start') {
+      const lang = ctx.args[1]?.toLowerCase();
+      if (!lang) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation('\x1B[31mUsage: /lsp start <language>\x1B[39m', 'system');
+        return;
+      }
+      try {
+        const manager = new LSPManager({ workspaceRoot: workingDir, servers: [lang] });
+        await manager.start(lang);
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[32mLSP '${lang}' started.\x1B[39m`, 'system');
+      } catch (err) {
+        if (ctx.tuiApp) ctx.tuiApp.addToConversation(`\x1B[31mFailed to start LSP '${lang}': ${err}\x1B[39m`, 'system');
+      }
+      return;
+    }
+
+    if (sub === 'diagnostics') {
+      if (ctx.tuiApp) {
+        ctx.tuiApp.addToConversation(
+          '\x1B[90mRun /lsp start <language> first, then diagnostics will appear here.\x1B[39m',
+          'system'
+        );
+      }
+      return;
+    }
+  },
+};
+
 // Register all commands
 globalCommandRegistry.register(helpCommand);
 globalCommandRegistry.register(exitCommand);
@@ -512,4 +848,13 @@ globalCommandRegistry.register(configCommand);
 globalCommandRegistry.register(logsCommand);
 globalCommandRegistry.register(historyCommand);
 globalCommandRegistry.register(setupCommand);
+
+// Phase 37-43 Commands
+globalCommandRegistry.register(editCommand);
+globalCommandRegistry.register(editSelectionCommand);
+globalCommandRegistry.register(editPromptCommand);
+globalCommandRegistry.register(macroCommand);
+globalCommandRegistry.register(timelineCommand);
+globalCommandRegistry.register(dashboardCommand);
+globalCommandRegistry.register(lspCommand);
 

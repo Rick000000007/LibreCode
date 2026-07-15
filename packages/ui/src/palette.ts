@@ -9,12 +9,29 @@ export interface PaletteItem {
   shortcut?: string;
   icon?: string;
   args?: string[];
+  detail?: string;
   action: () => void | Promise<void>;
 }
 
 export interface PaletteGroup {
   name: string;
   items: PaletteItem[];
+}
+
+export interface PaletteSearchOptions {
+  includeFileSearch?: boolean;
+  includeSymbolSearch?: boolean;
+  fileSearchFn?: (query: string) => Promise<PaletteItem[]>;
+  symbolSearchFn?: (query: string) => Promise<PaletteItem[]>;
+  recentCommands?: string[];
+  aiActions?: PaletteItem[];
+}
+
+let recentCommands: string[] = [];
+const MAX_RECENT = 10;
+
+export function recordRecentCommand(cmd: string): void {
+  recentCommands = [cmd, ...recentCommands.filter((c) => c !== cmd)].slice(0, MAX_RECENT);
 }
 
 function fuzzyScore(query: string, text: string): number {
@@ -48,13 +65,16 @@ function highlightMatch(text: string, query: string): string {
   const result: string[] = [];
   let lastIdx = 0;
 
-  for (let i = 0; i < t.length; i++) {
-    if (q.includes(t[i]!) && t.slice(i, i + q.length) === q) {
+  let i = 0;
+  let qi = 0;
+  while (i < t.length && qi < q.length) {
+    if (t[i] === q[qi]) {
       if (i > lastIdx) result.push(text.slice(lastIdx, i));
-      result.push(`${theme.accent}${theme.bold}${text.slice(i, i + q.length)}${theme.reset}`);
-      i += q.length - 1;
+      result.push(`${theme.accent}${theme.bold}${text[i]}${theme.reset}`);
+      qi++;
       lastIdx = i + 1;
     }
+    i++;
   }
   if (lastIdx < text.length) result.push(text.slice(lastIdx));
   return result.join('');
@@ -68,6 +88,9 @@ export class CommandPalette {
   private visible = false;
   private filteredItems: { item: PaletteItem; score: number }[] = [];
   private onSelect: ((item: PaletteItem) => void) | null = null;
+  private searchOptions: PaletteSearchOptions = {};
+  private staticSearchResults: PaletteItem[] = [];
+  private mode: 'commands' | 'files' | 'symbols' = 'commands';
 
   constructor() {
     this.filteredItems = [];
@@ -75,12 +98,18 @@ export class CommandPalette {
 
   setItems(items: PaletteItem[]): void {
     this.items = items;
+    this.mode = 'commands';
     this.groupItems();
   }
 
   setGroups(groups: PaletteGroup[]): void {
     this.groups = groups;
+    this.mode = 'commands';
     this.rebuildFlatItems();
+  }
+
+  setSearchOptions(options: PaletteSearchOptions): void {
+    this.searchOptions = options;
   }
 
   private groupItems(): void {
@@ -105,12 +134,36 @@ export class CommandPalette {
       this.filteredItems = this.items.map((item) => ({ item, score: 1 }));
       return;
     }
+
+    // Check for mode prefixes
+    if (query.startsWith('> ')) {
+      this.mode = 'commands';
+      this.doSearch(query.slice(2));
+      return;
+    }
+    if (query.startsWith('. ') && this.searchOptions.includeFileSearch && this.searchOptions.fileSearchFn) {
+      this.mode = 'files';
+      this.doAsyncSearch(query.slice(2), this.searchOptions.fileSearchFn);
+      return;
+    }
+    if (query.startsWith('# ') && this.searchOptions.includeSymbolSearch && this.searchOptions.symbolSearchFn) {
+      this.mode = 'symbols';
+      this.doAsyncSearch(query.slice(2), this.searchOptions.symbolSearchFn);
+      return;
+    }
+
+    this.mode = 'commands';
+    this.doSearch(query);
+  }
+
+  private doSearch(query: string): void {
     const scored = this.items.map((item) => ({
       item,
       score: Math.max(
         fuzzyScore(query, item.label),
         fuzzyScore(query, item.description),
         fuzzyScore(query, item.category),
+        item.shortcut ? fuzzyScore(query, item.shortcut) : 0,
       ),
     }));
     this.filteredItems = scored
@@ -118,11 +171,41 @@ export class CommandPalette {
       .sort((a, b) => b.score - a.score);
   }
 
+  private async doAsyncSearch(query: string, fn: (q: string) => Promise<PaletteItem[]>): Promise<void> {
+    try {
+      const results = await fn(query);
+      this.filteredItems = results.map((item) => ({ item, score: 100 }));
+      this.render();
+    } catch {
+      this.filteredItems = [];
+    }
+  }
+
   open(onSelect?: (item: PaletteItem) => void): void {
     this.visible = true;
     this.query = '';
     this.selectedIndex = 0;
-    this.filteredItems = this.items.map((item) => ({ item, score: 1 }));
+    this.mode = 'commands';
+
+    // Build items with recent commands on top
+    const recentItems: PaletteItem[] = [];
+    for (const cmd of recentCommands) {
+      const existing = this.items.find((i) => i.id === cmd || i.label === cmd);
+      if (existing) {
+        recentItems.push({ ...existing });
+      }
+    }
+
+    let allItems = this.items;
+    if (recentItems.length > 0) {
+      allItems = [
+        { id: 'recent', category: 'Recent', label: 'Recent Commands', description: '', action: () => {} },
+        ...recentItems,
+        ...this.items,
+      ];
+    }
+
+    this.filteredItems = allItems.map((item) => ({ item, score: 1 }));
     this.onSelect = onSelect ?? null;
     this.render();
   }
@@ -190,12 +273,15 @@ export class CommandPalette {
       this.updateQuery(this.query + key.name);
       return true;
     }
-    return true; // absorb all other keys while open
+    return true;
   }
 
   async executeSelected(): Promise<void> {
     const selected = this.getSelected();
     if (!selected) return;
+    if (selected.id !== 'recent') {
+      recordRecentCommand(selected.id);
+    }
     this.close();
     if (this.onSelect) {
       this.onSelect(selected);
@@ -207,13 +293,19 @@ export class CommandPalette {
   private render(): void {
     const cap = getTerminalCapabilities();
     const theme = getTheme();
-    const width = Math.min(cap.width, 80);
-    const maxItems = Math.min(this.filteredItems.length, Math.max(5, cap.height - 10));
+    const width = Math.min(cap.width, 100);
+    const maxItems = Math.min(this.filteredItems.length, Math.max(8, cap.height - 12));
     const lines: string[] = [];
+
+    // Mode hint
+    let modeHint = '';
+    if (this.mode === 'commands') modeHint = `${theme.dim}> commands${theme.reset}`;
+    else if (this.mode === 'files') modeHint = `${theme.dim}. files${theme.reset}`;
+    else if (this.mode === 'symbols') modeHint = `${theme.dim}# symbols${theme.reset}`;
 
     // Input line
     const prefix = `${theme.primary}>${theme.reset} `;
-    lines.push(`${prefix}${this.query}${cap.isTTY ? ' ▊' : ''}`);
+    lines.push(`${prefix}${this.query}${cap.isTTY ? ' ▊' : ''}  ${modeHint}`);
 
     // Separator
     lines.push(`${theme.dim}${'─'.repeat(width)}${theme.reset}`);
@@ -228,19 +320,28 @@ export class CommandPalette {
       const label = highlightMatch(entry.item.label, this.query);
       const desc = `${theme.muted}${entry.item.description.slice(0, width - entry.item.label.length - 20)}${theme.reset}`;
       const shortcut = entry.item.shortcut ? ` ${theme.dim}${entry.item.shortcut}${theme.reset}` : '';
+      const detail = entry.item.detail ? ` ${theme.dim}${entry.item.detail}${theme.reset}` : '';
 
       if (isSelected) {
         const selBg = cap.colorDepth >= 256 ? '\x1B[48;5;237m' : '\x1B[7m';
-        lines.push(`${selBg}${prefix2} ${category} ${label} ${desc}${shortcut}${theme.reset}`);
+        lines.push(`${selBg}${prefix2} ${category} ${label} ${desc}${shortcut}${detail}${theme.reset}`);
       } else {
-        lines.push(` ${prefix2} ${category} ${label} ${desc}${shortcut}`);
+        lines.push(` ${prefix2} ${category} ${label} ${desc}${shortcut}${detail}`);
       }
     }
 
+    // Total count
+    const countText = `${this.filteredItems.length} items`;
+    lines.push(`${theme.dim}${countText}${theme.reset}`);
+
+    // Mode usage hint
+    if (!this.query.startsWith('> ') && !this.query.startsWith('. ') && !this.query.startsWith('# ')) {
+      lines.push(`${theme.dim}Use '> ' to filter commands, '. ' to search files, '# ' to search symbols${theme.reset}`);
+    }
+
     const output = lines.join('\n');
-    // Save cursor, print, restore
     process.stdout.write('\x1B[s');
-    process.stdout.write(`\x1B[${maxItems + 3}A`);
+    process.stdout.write(`\x1B[${maxItems + 5}A`);
     process.stdout.write(output);
     process.stdout.write('\x1B[u');
   }
